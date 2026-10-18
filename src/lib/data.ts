@@ -3,15 +3,15 @@
 // the real integration (listed in `tool`) would produce.
 
 export const agents = [
-  { slug: "research-underwriting", name: "Research + Underwriting", icon: "search", tool: "Attom / SEC EDGAR / Firecrawl" },
-  { slug: "lead-qualification", name: "Lead Qualification", icon: "target", tool: "HubSpot / Salesforce" },
-  { slug: "support-assistant", name: "Support Assistant", icon: "message-circle", tool: "Pinecone RAG + Cal.com" },
-  { slug: "document-review", name: "Document Review", icon: "file-text", tool: "LlamaParse / Unstructured.io" },
-  { slug: "reporting", name: "Reporting Agent", icon: "bar-chart-2", tool: "Google Sheets API" },
-  { slug: "report-design", name: "Report/Design Generation", icon: "layout-template", tool: "WeasyPrint / Pandoc" },
-  { slug: "social-media", name: "Social Media Posting", icon: "share-2", tool: "Buffer / LinkedIn API" },
-  { slug: "email-followups", name: "Email Follow-ups", icon: "mail", tool: "Resend / SendGrid" },
-  { slug: "appointment-booking", name: "Appointment Booking", icon: "calendar", tool: "Cal.com / Google Calendar" },
+  { slug: "research-underwriting", name: "Research + Underwriting", icon: "search", tool: "Attom / SEC EDGAR / Firecrawl", blurb: "Looks up properties and companies, then writes a risk summary." },
+  { slug: "lead-qualification", name: "Lead Qualification", icon: "target", tool: "HubSpot / Salesforce", blurb: "Scores new leads so you know who to call first." },
+  { slug: "support-assistant", name: "Support Assistant", icon: "message-circle", tool: "Pinecone RAG + Cal.com", blurb: "Answers customer questions and books calls, 24/7." },
+  { slug: "document-review", name: "Document Review", icon: "file-text", tool: "LlamaParse / Unstructured.io", blurb: "Reads contracts and flags the risky clauses for you." },
+  { slug: "reporting", name: "Reporting Agent", icon: "bar-chart-2", tool: "Google Sheets API", blurb: "Sends a plain-English summary of the week's numbers." },
+  { slug: "report-design", name: "Report/Design Generation", icon: "layout-template", tool: "WeasyPrint / Pandoc", blurb: "Turns raw data into a clean, ready-to-send PDF." },
+  { slug: "social-media", name: "Social Media Posting", icon: "share-2", tool: "Buffer / LinkedIn API", blurb: "Drafts posts for you to approve before they go live." },
+  { slug: "email-followups", name: "Email Follow-ups", icon: "mail", tool: "Resend / SendGrid", blurb: "Keeps following up with leads automatically." },
+  { slug: "appointment-booking", name: "Appointment Booking", icon: "calendar", tool: "Cal.com / Google Calendar", blurb: "Puts meetings straight on the calendar." },
 ] as const;
 
 export type AgentSlug = (typeof agents)[number]["slug"];

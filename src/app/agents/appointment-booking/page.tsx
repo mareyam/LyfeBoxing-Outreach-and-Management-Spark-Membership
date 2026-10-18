@@ -14,12 +14,12 @@ export default function Page() {
         {appointments.map((a) => (
           <Card key={a.id} className="flex items-center justify-between">
             <div>
-              <p className="font-medium text-neutral-900 dark:text-neutral-100 text-sm">{a.name}</p>
-              <p className="text-xs text-neutral-500">{a.type} · with {a.withWhom}</p>
+              <p className="font-medium text-neutral-900 text-base">{a.name}</p>
+              <p className="text-base text-neutral-500">{a.type} · with {a.withWhom}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">{a.date}</p>
-              <p className="text-xs text-neutral-500">{a.time}</p>
+              <p className="text-base text-neutral-700">{a.date}</p>
+              <p className="text-base text-neutral-500">{a.time}</p>
             </div>
             <Badge>{a.status}</Badge>
           </Card>

@@ -19,9 +19,9 @@ export default function Page() {
         />
       </div>
 
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white dark:bg-neutral-900">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 dark:bg-neutral-950 text-left text-xs text-neutral-500">
+      <div className="rounded-xl border border-neutral-200 overflow-hidden bg-white">
+        <table className="w-full text-base">
+          <thead className="bg-neutral-50 text-left text-base text-neutral-500">
             <tr>
               <th className="px-4 py-3">Lead</th>
               <th className="px-4 py-3">Source</th>
@@ -33,15 +33,15 @@ export default function Page() {
           </thead>
           <tbody>
             {leads.map((l) => (
-              <tr key={l.id} className="border-t border-neutral-100 dark:border-neutral-800">
+              <tr key={l.id} className="border-t border-neutral-100">
                 <td className="px-4 py-3">
-                  <p className="font-medium text-neutral-900 dark:text-neutral-100">{l.name}</p>
-                  <p className="text-xs text-neutral-500">{l.company}</p>
+                  <p className="font-medium text-neutral-900">{l.name}</p>
+                  <p className="text-base text-neutral-500">{l.company}</p>
                 </td>
-                <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{l.source}</td>
-                <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">${l.budget.toLocaleString()}</td>
-                <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{l.timeline}</td>
-                <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100">{l.score}</td>
+                <td className="px-4 py-3 text-neutral-600">{l.source}</td>
+                <td className="px-4 py-3 text-neutral-600">${l.budget.toLocaleString()}</td>
+                <td className="px-4 py-3 text-neutral-600">{l.timeline}</td>
+                <td className="px-4 py-3 font-medium text-neutral-900">{l.score}</td>
                 <td className="px-4 py-3">
                   <Badge>{l.status}</Badge>
                 </td>
@@ -52,8 +52,8 @@ export default function Page() {
       </div>
       <div className="mt-4 space-y-2">
         {leads.map((l) => (
-          <p key={l.id} className="text-xs text-neutral-500">
-            <span className="font-medium text-neutral-700 dark:text-neutral-300">{l.name}:</span> {l.notes}
+          <p key={l.id} className="text-base text-neutral-500">
+            <span className="font-medium text-neutral-700">{l.name}:</span> {l.notes}
           </p>
         ))}
       </div>

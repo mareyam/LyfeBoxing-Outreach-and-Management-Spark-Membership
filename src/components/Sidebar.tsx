@@ -8,23 +8,19 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 shrink-0 border-r border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 h-full overflow-y-auto">
-      <div className="px-5 py-5 border-b border-neutral-200 dark:border-neutral-800">
-        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-          Alex Ops — Agent Suite
-        </p>
-        <p className="text-xs text-neutral-500 mt-0.5">Demo · dummy data</p>
+    <aside className="w-72 shrink-0 border-r-2 border-black bg-white h-full overflow-y-auto">
+      <div className="px-6 py-6 border-b-2 border-black">
+        <p className="text-lg font-bold text-black">Alex&apos;s Assistants</p>
+        <p className="text-sm text-neutral-500 mt-1">Sample version — not live yet</p>
       </div>
-      <nav className="p-2">
+      <nav className="p-3">
         <Link
           href="/"
-          className={`block rounded-md px-3 py-2 text-sm mb-1 ${
-            pathname === "/"
-              ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-              : "text-neutral-700 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          className={`block rounded-xl px-4 py-3 text-base font-medium mb-1 ${
+            pathname === "/" ? "bg-black text-white" : "text-black hover:bg-neutral-100"
           }`}
         >
-          Overview
+          Home
         </Link>
         {agents.map((a) => {
           const href = `/agents/${a.slug}`;
@@ -33,10 +29,8 @@ export default function Sidebar() {
             <Link
               key={a.slug}
               href={href}
-              className={`block rounded-md px-3 py-2 text-sm mb-1 ${
-                active
-                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                  : "text-neutral-700 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              className={`block rounded-xl px-4 py-3 text-base font-medium mb-1 ${
+                active ? "bg-black text-white" : "text-black hover:bg-neutral-100"
               }`}
             >
               {a.name}

@@ -10,7 +10,7 @@ export default function Page() {
         tool="Google Sheets API / Microsoft Graph API"
       />
 
-      <p className="text-sm text-neutral-500 mb-4">Week of {weeklyReport.period}</p>
+      <p className="text-base text-neutral-500 mb-4">Week of {weeklyReport.period}</p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <Stat label="New leads" value={weeklyReport.newLeads} />
@@ -20,13 +20,13 @@ export default function Page() {
       </div>
 
       <Card>
-        <p className="text-xs text-neutral-500">Revenue this week</p>
-        <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mt-1">
+        <p className="text-base text-neutral-500">Revenue this week</p>
+        <p className="text-2xl font-semibold text-neutral-900 mt-1">
           ${weeklyReport.revenue.toLocaleString()}
         </p>
-        <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500 mb-1">Top insight</p>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
+        <div className="mt-4 pt-4 border-t border-neutral-100">
+          <p className="text-base text-neutral-500 mb-1">Top insight</p>
+          <p className="text-base text-neutral-600 leading-relaxed">
             {weeklyReport.topInsight}
           </p>
         </div>

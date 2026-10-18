@@ -14,14 +14,14 @@ export default function Page() {
         {emailSequences.map((e) => (
           <Card key={e.id}>
             <div className="flex items-center justify-between mb-3">
-              <p className="font-medium text-neutral-900 dark:text-neutral-100 text-sm">{e.lead}</p>
-              <span className="text-xs text-neutral-500">{e.sequence}</span>
+              <p className="font-medium text-neutral-900 text-base">{e.lead}</p>
+              <span className="text-base text-neutral-500">{e.sequence}</span>
             </div>
             <div className="space-y-2">
               {e.steps.map((s, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
-                  <span className="text-neutral-500 w-16 text-xs">Day {s.day}</span>
-                  <span className="flex-1 text-neutral-700 dark:text-neutral-300">{s.subject}</span>
+                <div key={i} className="flex items-center justify-between text-base">
+                  <span className="text-neutral-500 w-16 text-base">Day {s.day}</span>
+                  <span className="flex-1 text-neutral-700">{s.subject}</span>
                   <Badge>{s.status}</Badge>
                 </div>
               ))}

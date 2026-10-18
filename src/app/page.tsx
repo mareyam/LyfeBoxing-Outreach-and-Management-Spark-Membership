@@ -5,21 +5,20 @@ import { Card } from "@/components/ui";
 export default function Home() {
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-        Agent Suite Overview
-      </h1>
-      <p className="text-sm text-neutral-500 mt-1 max-w-2xl">
-        Walkthrough demo of the 9 agents discussed with Alex. Every number and
-        message below is dummy data standing in for the real integrations
-        listed on each page — nothing here calls a live API.
+      <h1 className="text-3xl font-bold text-black">Your Assistants</h1>
+      <p className="text-base text-neutral-700 mt-2 max-w-2xl">
+        Here&apos;s a preview of 9 assistants that could run parts of your
+        business for you. Click any one to see an example of what it would do.
+        Everything on these pages is a sample — no real emails, posts, or
+        bookings are being made yet.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-8">
         {agents.map((a) => (
           <Link key={a.slug} href={`/agents/${a.slug}`}>
-            <Card className="h-full hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors">
-              <p className="font-medium text-neutral-900 dark:text-neutral-100">{a.name}</p>
-              <p className="text-xs text-neutral-400 mt-2 font-mono">{a.tool}</p>
+            <Card className="h-full hover:bg-neutral-50 transition-colors">
+              <p className="text-lg font-bold text-black">{a.name}</p>
+              <p className="text-base text-neutral-600 mt-2">{a.blurb}</p>
             </Card>
           </Link>
         ))}

@@ -24,39 +24,39 @@ export default function Page() {
           <Card key={d.id}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-medium text-neutral-900 dark:text-neutral-100">{d.address}</p>
-                <p className="text-xs text-neutral-500">{d.type}</p>
+                <p className="font-medium text-neutral-900">{d.address}</p>
+                <p className="text-base text-neutral-500">{d.type}</p>
               </div>
               <Badge>{d.riskLevel}</Badge>
             </div>
-            <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
+            <div className="grid grid-cols-3 gap-4 mt-4 text-base">
               <div>
-                <p className="text-xs text-neutral-500">Asking price</p>
-                <p className="font-medium text-neutral-900 dark:text-neutral-100">${d.askingPrice.toLocaleString()}</p>
+                <p className="text-base text-neutral-500">Asking price</p>
+                <p className="font-medium text-neutral-900">${d.askingPrice.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-xs text-neutral-500">NOI</p>
-                <p className="font-medium text-neutral-900 dark:text-neutral-100">${d.noi.toLocaleString()}</p>
+                <p className="text-base text-neutral-500">NOI</p>
+                <p className="font-medium text-neutral-900">${d.noi.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-xs text-neutral-500">Cap rate</p>
-                <p className="font-medium text-neutral-900 dark:text-neutral-100">{d.capRate}%</p>
+                <p className="text-base text-neutral-500">Cap rate</p>
+                <p className="font-medium text-neutral-900">{d.capRate}%</p>
               </div>
             </div>
             <div className="mt-4">
-              <p className="text-xs text-neutral-500 mb-1">Risk flags</p>
+              <p className="text-base text-neutral-500 mb-1">Risk flags</p>
               <div className="flex gap-2 flex-wrap">
                 {d.riskFlags.map((f) => (
                   <span
                     key={f}
-                    className="text-xs rounded-md bg-neutral-100 dark:bg-neutral-800 px-2 py-1 text-neutral-600 dark:text-neutral-300"
+                    className="text-base rounded-md bg-neutral-100 px-2 py-1 text-neutral-600"
                   >
                     {f}
                   </span>
                 ))}
               </div>
             </div>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-4 leading-relaxed">
+            <p className="text-base text-neutral-600 mt-4 leading-relaxed">
               {d.summary}
             </p>
           </Card>

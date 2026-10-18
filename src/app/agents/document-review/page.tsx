@@ -15,25 +15,25 @@ export default function Page() {
           <Card key={d.id}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-medium text-neutral-900 dark:text-neutral-100 font-mono text-sm">{d.name}</p>
-                <p className="text-xs text-neutral-500 mt-0.5">{d.pages} pages</p>
+                <p className="font-medium text-neutral-900 font-mono text-base">{d.name}</p>
+                <p className="text-base text-neutral-500 mt-0.5">{d.pages} pages</p>
               </div>
               <Badge>{d.status}</Badge>
             </div>
             {d.flaggedClauses.length > 0 ? (
               <div className="mt-4 space-y-2">
                 {d.flaggedClauses.map((c, i) => (
-                  <div key={i} className="rounded-lg bg-neutral-50 dark:bg-neutral-800 p-3">
+                  <div key={i} className="rounded-lg bg-neutral-50 p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">{c.clause}</p>
+                      <p className="text-base font-medium text-neutral-800">{c.clause}</p>
                       <Badge>{c.severity}</Badge>
                     </div>
-                    <p className="text-sm text-neutral-500 mt-1">{c.issue}</p>
+                    <p className="text-base text-neutral-500 mt-1">{c.issue}</p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-neutral-400 mt-4">Still processing — no clauses extracted yet.</p>
+              <p className="text-base text-neutral-400 mt-4">Still processing — no clauses extracted yet.</p>
             )}
           </Card>
         ))}
