@@ -215,7 +215,7 @@ export function CancelledView() {
                 <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate}</td>
                 <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate}</td>
                 <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 max-w-xs">{c.reason || "—"}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -263,33 +263,80 @@ export function PastDueView() {
   );
 }
 
+function parsePaymentDate(dateStr: string): Date | null {
+  const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!m) return null;
+  const [, mm, dd, yyyy] = m;
+  return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+}
+
+function toInputDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addMonths(d: Date, months: number): Date {
+  const result = new Date(d);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
 export function PaymentsView() {
   const [query, setQuery] = useState("");
+
+  const earliestDate = useMemo(() => {
+    const dates = paymentsList.map((p) => parsePaymentDate(p.date)).filter((d): d is Date => d !== null);
+    return dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date();
+  }, []);
+
+  const [fromDate, setFromDate] = useState(() => toInputDate(earliestDate));
+  const toDate = useMemo(() => toInputDate(addMonths(new Date(fromDate), 1)), [fromDate]);
+
+  const dateFiltered = useMemo(() => {
+    const from = new Date(fromDate);
+    const to = new Date(toDate);
+    return paymentsList.filter((p) => {
+      const d = parsePaymentDate(p.date);
+      return d !== null && d >= from && d < to;
+    });
+  }, [fromDate, toDate]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return paymentsList;
-    return paymentsList.filter(
+    if (!q) return dateFiltered;
+    return dateFiltered.filter(
       (p) => p.memberName.toLowerCase().includes(q) || p.item.toLowerCase().includes(q) || p.paymentType.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [dateFiltered, query]);
 
-  const totalPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0), []);
+  const totalPaid = useMemo(() => dateFiltered.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0), [dateFiltered]);
 
   return (
     <div className="max-w-6xl">
-      <PageHeader title="Payments (Oct 1–25)" subtitle="Every payment captured in the period, by member and method." tool="Google Sheets (Payments Oct 1-25)" />
+      <PageHeader title="Payments" subtitle="Every payment captured in a one-month window, by member and method." tool="Google Sheets (Payments Oct 1-25)" />
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Stat label="Payments recorded" value={paymentsList.length} />
+        <Stat label="Payments recorded" value={dateFiltered.length} />
         <Stat label="Total collected" value={`$${totalPaid.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
       </div>
-      <input
-        type="text"
-        placeholder="Search by name, item, or card type..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {paymentsList.length} payments</p>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <label className="flex items-center gap-2 text-sm text-neutral-600">
+          From
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+          />
+        </label>
+        <span className="text-sm text-neutral-400 self-center">1-month window, through {toDate}</span>
+        <input
+          type="text"
+          placeholder="Search by name, item, or card type..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+        />
+      </div>
+      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {dateFiltered.length} payments in this window ({paymentsList.length} total on record)</p>
       <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-white">
@@ -351,9 +398,9 @@ export function SmsView() {
           <tbody>
             {filtered.map((s, i) => (
               <tr key={`${s.contactName}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{s.date}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{s.date || "Broadcast"}</td>
                 <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{s.contactName}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 max-w-xl">{s.text}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 max-w-xl break-words">{s.text}</td>
               </tr>
             ))}
           </tbody>
