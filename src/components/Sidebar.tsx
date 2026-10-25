@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home } from "lucide-react";
+import { Home, Dumbbell } from "lucide-react";
 import { agents } from "@/lib/data";
 import { agentIcons } from "@/lib/icons";
 
@@ -17,6 +17,12 @@ export default function Sidebar() {
       </div>
       <nav className="px-3 pb-6 space-y-0.5">
         <SidebarLink href="/" label="Home" Icon={Home} active={pathname === "/"} />
+        <SidebarLink
+          href="/lyfe-boxing"
+          label="Lyfe Boxing"
+          Icon={Dumbbell}
+          active={pathname === "/lyfe-boxing"}
+        />
         {agents.map((a) => {
           const href = `/agents/${a.slug}`;
           return (
