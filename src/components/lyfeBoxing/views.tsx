@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Mail, MessageSquare } from "lucide-react";
 import { memberships } from "@/lib/lyfeBoxingData";
 import {
   summary,
@@ -11,7 +12,7 @@ import {
   paymentsList,
   smsList,
 } from "@/lib/lyfeBoxingOthersData";
-import { Card, PageHeader, Stat } from "@/components/ui";
+import { Badge, Card, PageHeader, Stat } from "@/components/ui";
 
 function parseMoney(v: string) {
   return Number(v.replace(/[^0-9.-]/g, "")) || 0;
@@ -226,6 +227,9 @@ export function CancelledView() {
 }
 
 export function PastDueView() {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const open = openIndex !== null ? pastDue[openIndex] : null;
+
   return (
     <div className="max-w-6xl">
       <PageHeader title="Past Due" subtitle="Members with failed or missed autoCharge payments." tool="Google Sheets (Past Due)" />
@@ -241,6 +245,7 @@ export function PastDueView() {
               <th className="py-2 pr-4 font-medium">Last attempt</th>
               <th className="py-2 pr-4 font-medium">Payment amount</th>
               <th className="py-2 pr-4 font-medium">Total overdue</th>
+              <th className="py-2 pr-4 font-medium">Email</th>
             </tr>
           </thead>
           <tbody>
@@ -254,11 +259,52 @@ export function PastDueView() {
                 <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.lastAttempt}</td>
                 <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.paymentAmount}</td>
                 <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.totalOverdue}</td>
+                <td className="py-2.5 pr-4 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <Badge>{p.emailStatus}</Badge>
+                    <button
+                      onClick={() => setOpenIndex(i)}
+                      className="text-sm text-neutral-500 underline underline-offset-2 hover:text-neutral-900"
+                    >
+                      View email
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </Card>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setOpenIndex(null)}
+        >
+          <div
+            className="w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <p className="text-sm text-neutral-400">Email to {open.contact}</p>
+                <p className="text-base font-semibold text-neutral-900 mt-0.5">{open.emailSubject}</p>
+              </div>
+              <Badge>{open.emailStatus}</Badge>
+            </div>
+            <p className="text-sm text-neutral-500 mb-4">{open.email}</p>
+            <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm text-neutral-700 whitespace-pre-wrap">
+              {open.emailBody}
+            </div>
+            <button
+              onClick={() => setOpenIndex(null)}
+              className="mt-5 w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -485,5 +531,311 @@ export function ReportsView() {
         ))}
       </div>
     </div>
+  );
+}
+
+type Campaign = {
+  row: number;
+  campaignName: string;
+  channel: string;
+  audience: string;
+  subject: string;
+  messageBody: string;
+  send: boolean;
+  status: string;
+  recipients: string;
+  sentAt: string;
+  notes: string;
+};
+
+function nextSendWindowPKT(): string {
+  const now = new Date();
+  const pktNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
+  const candidates = [0, 15].map((hour) => {
+    const d = new Date(pktNow);
+    d.setHours(hour, 0, 0, 0);
+    if (d <= pktNow) d.setDate(d.getDate() + 1);
+    return d;
+  });
+  const next = candidates.sort((a, b) => a.getTime() - b.getTime())[0];
+  const label = next.getHours() === 0 ? "12 AM" : "3 PM";
+  const dayLabel = next.toDateString() === pktNow.toDateString() ? "today" : "tomorrow";
+  return `${label} PKT ${dayLabel}`;
+}
+
+const audienceOptions = [
+  "All active members",
+  "Past due members",
+  ...Array.from(new Set(memberships.map((m) => m.membership))).sort(),
+];
+
+export function CampaignsView() {
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [sendingRow, setSendingRow] = useState<number | null>(null);
+  const nextWindow = useMemo(() => nextSendWindowPKT(), []);
+
+  async function load() {
+    try {
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      if (!res.ok) {
+        setNotConfigured(!!data.notConfigured);
+        setError(data.error ?? "Failed to load campaigns.");
+        return;
+      }
+      setCampaigns(data.campaigns);
+      setError(null);
+      setNotConfigured(false);
+    } catch {
+      setError("Failed to load campaigns.");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleSend(row: number) {
+    setSendingRow(row);
+    try {
+      const res = await fetch("/api/campaigns/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? "Failed to queue campaign.");
+      } else {
+        await load();
+      }
+    } finally {
+      setSendingRow(null);
+    }
+  }
+
+  return (
+    <div className="max-w-6xl">
+      <PageHeader
+        title="Campaigns"
+        subtitle="Email and SMS campaigns. Sending happens through Spark on the next 3 PM / 12 AM PKT run — this page only queues them."
+        tool="Google Sheets (Campaigns) + Spark"
+      />
+
+      <div className="flex items-center justify-between mb-6">
+        <p className="text-sm text-neutral-500">
+          Next send window: <span className="text-neutral-900 font-medium">{nextWindow}</span>
+        </p>
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          className="rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800"
+        >
+          {showForm ? "Cancel" : "New campaign"}
+        </button>
+      </div>
+
+      {showForm && (
+        <NewCampaignForm
+          onCreated={async () => {
+            setShowForm(false);
+            await load();
+          }}
+        />
+      )}
+
+      {notConfigured && (
+        <Card className="mb-6 border-amber-200 bg-amber-50">
+          <p className="text-sm text-amber-800">
+            Campaigns aren&apos;t wired up yet — the Google service account needs edit access to the sheet,
+            and its credentials need to be set as environment variables on this deployment.
+          </p>
+        </Card>
+      )}
+      {error && !notConfigured && (
+        <Card className="mb-6 border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{error}</p>
+        </Card>
+      )}
+
+      {campaigns && campaigns.length === 0 && !error && (
+        <p className="text-sm text-neutral-400">No campaigns yet. Create one above.</p>
+      )}
+
+      <div className="space-y-3">
+        {campaigns?.map((c) => {
+          const locked = c.status === "Sending" || c.status === "Sent";
+          const canSend = c.status === "Draft" || c.status === "Error";
+          return (
+            <Card key={c.row}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full bg-neutral-50 border border-neutral-200 flex items-center justify-center shrink-0">
+                    {c.channel === "SMS" ? (
+                      <MessageSquare className="h-4 w-4 text-neutral-500" strokeWidth={1.75} />
+                    ) : (
+                      <Mail className="h-4 w-4 text-neutral-500" strokeWidth={1.75} />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-neutral-900">{c.campaignName}</p>
+                    <p className="text-sm text-neutral-500 mt-0.5">
+                      {c.channel} · {c.audience}
+                      {c.recipients && ` · ${c.recipients} recipients`}
+                    </p>
+                    {c.channel === "Email" && c.subject && (
+                      <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>
+                    )}
+                    <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">{c.messageBody}</p>
+                    {c.sentAt && <p className="text-xs text-neutral-400 mt-2">Sent at {c.sentAt}</p>}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <Badge>{c.status}</Badge>
+                  {canSend && (
+                    <button
+                      onClick={() => handleSend(c.row)}
+                      disabled={sendingRow === c.row}
+                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                    >
+                      {sendingRow === c.row ? "Queuing…" : "Send"}
+                    </button>
+                  )}
+                  {locked && <p className="text-xs text-neutral-400">Locked</p>}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
+  const [campaignName, setCampaignName] = useState("");
+  const [channel, setChannel] = useState<"Email" | "SMS">("Email");
+  const [audience, setAudience] = useState(audienceOptions[0]);
+  const [subject, setSubject] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const smsLength = messageBody.length;
+  const overSmsLimit = channel === "SMS" && smsLength > 145;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignName, channel, audience, subject, messageBody }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to create campaign.");
+        return;
+      }
+      setCampaignName("");
+      setSubject("");
+      setMessageBody("");
+      onCreated();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="mb-6">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm text-neutral-600 mb-1.5">Campaign name</label>
+          <input
+            required
+            value={campaignName}
+            onChange={(e) => setCampaignName(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+          />
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-neutral-600 mb-1.5">Channel</label>
+            <select
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as "Email" | "SMS")}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            >
+              <option value="Email">Email</option>
+              <option value="SMS">SMS</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-neutral-600 mb-1.5">Audience</label>
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            >
+              {audienceOptions.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {channel === "Email" && (
+          <div>
+            <label className="block text-sm text-neutral-600 mb-1.5">Subject</label>
+            <input
+              required
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            />
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-sm text-neutral-600">
+              Message body <span className="text-neutral-400">— use {"{First name}"} to personalize</span>
+            </label>
+            {channel === "SMS" && (
+              <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>
+                {smsLength} / 145
+              </span>
+            )}
+          </div>
+          <textarea
+            required
+            rows={5}
+            value={messageBody}
+            onChange={(e) => setMessageBody(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+          />
+          {overSmsLimit && (
+            <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-full bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {submitting ? "Saving…" : "Save as draft"}
+        </button>
+      </form>
+    </Card>
   );
 }

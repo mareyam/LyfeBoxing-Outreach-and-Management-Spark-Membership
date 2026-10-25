@@ -12,6 +12,7 @@ const lyfeBoxingLinks = [
   { href: "/lyfe-boxing/summary", label: "Summary" },
   { href: "/lyfe-boxing/cancelled", label: "Cancelled (Oct)" },
   { href: "/lyfe-boxing/past-due", label: "Past Due" },
+  { href: "/lyfe-boxing/campaigns", label: "Campaigns" },
   { href: "/lyfe-boxing/payments", label: "Payments (Oct 1-25)" },
   { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
   { href: "/lyfe-boxing/contacts", label: "Contacts" },

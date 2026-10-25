@@ -49,6 +49,11 @@ const badgeKind: Record<string, "done" | "attention" | "neutral"> = {
   Processing: "neutral",
   "Pending approval": "neutral",
   Approved: "done",
+  "Ready to send": "neutral",
+  Error: "attention",
+  Draft: "neutral",
+  Queued: "neutral",
+  Sending: "attention",
 };
 
 const dotStyle: Record<string, string> = {
