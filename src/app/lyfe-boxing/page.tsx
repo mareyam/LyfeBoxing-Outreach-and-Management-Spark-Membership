@@ -1,14 +1,122 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { memberships } from "@/lib/lyfeBoxingData";
+import {
+  summary,
+  cancellations,
+  pastDue,
+  reportsIndex,
+  contacts,
+  paymentsList,
+  smsList,
+} from "@/lib/lyfeBoxingOthersData";
 import { Card, PageHeader, Stat } from "@/components/ui";
 
 function parseMoney(v: string) {
   return Number(v.replace(/[^0-9.-]/g, "")) || 0;
 }
 
+type Tab =
+  | "memberships"
+  | "summary"
+  | "cancelled"
+  | "pastdue"
+  | "payments"
+  | "sms"
+  | "contacts"
+  | "reports";
+
+const OTHER_TABS: { id: Tab; label: string }[] = [
+  { id: "summary", label: "Summary" },
+  { id: "cancelled", label: "Cancelled (Oct)" },
+  { id: "pastdue", label: "Past Due" },
+  { id: "payments", label: "Payments (Oct 1-25)" },
+  { id: "sms", label: "SMS Conversations" },
+  { id: "contacts", label: "Contacts" },
+  { id: "reports", label: "Reports Index" },
+];
+
 export default function Page() {
+  const [tab, setTab] = useState<Tab>("memberships");
+  const [othersOpen, setOthersOpen] = useState(false);
+
+  return (
+    <div className="max-w-6xl">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <TabButton active={tab === "memberships"} onClick={() => setTab("memberships")}>
+          Lyfe Boxing
+        </TabButton>
+
+        <div className="relative">
+          <TabButton
+            active={tab !== "memberships"}
+            onClick={() => setOthersOpen((o) => !o)}
+            trailingIcon={othersOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          >
+            Others
+          </TabButton>
+          {othersOpen && (
+            <div className="absolute left-0 top-full mt-1 z-10 w-56 rounded-xl border border-neutral-200 bg-white shadow-md py-1.5">
+              {OTHER_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setTab(t.id);
+                    setOthersOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                    tab === t.id ? "bg-neutral-50 text-neutral-900 font-medium" : "text-neutral-600 hover:bg-neutral-50"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {tab === "memberships" && <MembershipsView />}
+      {tab === "summary" && <SummaryView />}
+      {tab === "cancelled" && <CancelledView />}
+      {tab === "pastdue" && <PastDueView />}
+      {tab === "payments" && <PaymentsView />}
+      {tab === "sms" && <SmsView />}
+      {tab === "contacts" && <ContactsView />}
+      {tab === "reports" && <ReportsView />}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+  trailingIcon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  trailingIcon?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium border transition-colors ${
+        active
+          ? "bg-neutral-900 text-white border-neutral-900"
+          : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
+      }`}
+    >
+      {children}
+      {trailingIcon}
+    </button>
+  );
+}
+
+function MembershipsView() {
   const [query, setQuery] = useState("");
   const [membershipFilter, setMembershipFilter] = useState("All");
 
@@ -41,7 +149,7 @@ export default function Page() {
   }, []);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Lyfe Boxing — Memberships"
         subtitle="Who's on which membership, what they owe, and when their next payment is due."
@@ -129,6 +237,305 @@ export default function Page() {
           </tbody>
         </table>
       </Card>
+    </div>
+  );
+}
+
+function SummaryView() {
+  return (
+    <div>
+      <PageHeader title="Summary" subtitle="Financial and membership summary for Oct 1–25." tool="Google Sheets (Summary)" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        {summary.map(([label, value]) => (
+          <Stat key={label} label={label} value={value} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CancelledView() {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return cancellations;
+    return cancellations.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.membership.toLowerCase().includes(q) ||
+        c.quitCategory.toLowerCase().includes(q)
+    );
+  }, [query]);
+
+  const byCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of cancellations) counts.set(c.quitCategory, (counts.get(c.quitCategory) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, []);
+
+  return (
+    <div>
+      <PageHeader title="Cancelled (October)" subtitle="Members who cancelled this month, with reason and category." tool="Google Sheets (Cancelled Oct)" />
+      <Card className="mb-6">
+        <p className="text-base text-neutral-500 mb-3">Cancellations by category</p>
+        <div className="flex flex-wrap gap-2">
+          {byCategory.map(([name, count]) => (
+            <span key={name} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700">
+              {name} <span className="text-neutral-400">· {count}</span>
+            </span>
+          ))}
+        </div>
+      </Card>
+      <input
+        type="text"
+        placeholder="Search by name, plan, or reason category..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+      />
+      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {cancellations.length} cancellations</p>
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">Membership</th>
+              <th className="py-2 pr-4 font-medium">Signed</th>
+              <th className="py-2 pr-4 font-medium">Cancelled</th>
+              <th className="py-2 pr-4 font-medium">Category</th>
+              <th className="py-2 pr-4 font-medium">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((c, i) => (
+              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 max-w-xs">{c.reason || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function PastDueView() {
+  return (
+    <div>
+      <PageHeader title="Past Due" subtitle="Members with failed or missed autoCharge payments." tool="Google Sheets (Past Due)" />
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-4 font-medium">Due</th>
+              <th className="py-2 pr-4 font-medium">Contact</th>
+              <th className="py-2 pr-4 font-medium">Contact details</th>
+              <th className="py-2 pr-4 font-medium">Membership</th>
+              <th className="py-2 pr-4 font-medium">Attempts</th>
+              <th className="py-2 pr-4 font-medium">Last attempt</th>
+              <th className="py-2 pr-4 font-medium">Payment amount</th>
+              <th className="py-2 pr-4 font-medium">Total overdue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pastDue.map((p, i) => (
+              <tr key={`${p.contact}-${i}`} className="border-b border-neutral-50 last:border-0">
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.due}</td>
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.contact}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.contactDetails}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.description}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.attempts}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.lastAttempt}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.paymentAmount}</td>
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.totalOverdue}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function PaymentsView() {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return paymentsList;
+    return paymentsList.filter(
+      (p) => p.memberName.toLowerCase().includes(q) || p.item.toLowerCase().includes(q) || p.paymentType.toLowerCase().includes(q)
+    );
+  }, [query]);
+
+  const totalPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0), []);
+
+  return (
+    <div>
+      <PageHeader title="Payments (Oct 1–25)" subtitle="Every payment captured in the period, by member and method." tool="Google Sheets (Payments Oct 1-25)" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <Stat label="Payments recorded" value={paymentsList.length} />
+        <Stat label="Total collected" value={`$${totalPaid.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
+      </div>
+      <input
+        type="text"
+        placeholder="Search by name, item, or card type..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+      />
+      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {paymentsList.length} payments</p>
+      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-white">
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-4 font-medium">Date</th>
+              <th className="py-2 pr-4 font-medium">Member</th>
+              <th className="py-2 pr-4 font-medium">Item</th>
+              <th className="py-2 pr-4 font-medium">Type</th>
+              <th className="py-2 pr-4 font-medium">Amount</th>
+              <th className="py-2 pr-4 font-medium">Invoice #</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p, i) => (
+              <tr key={`${p.invoiceNumber}-${i}`} className="border-b border-neutral-50 last:border-0">
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.date}</td>
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.memberName}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 max-w-sm truncate">{p.item}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.paymentType}</td>
+                <td className="py-2.5 pr-4 text-neutral-900 whitespace-nowrap">{p.amountPaid}</td>
+                <td className="py-2.5 pr-4 text-neutral-400 whitespace-nowrap">{p.invoiceNumber}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function SmsView() {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return smsList;
+    return smsList.filter((s) => s.contactName.toLowerCase().includes(q) || s.text.toLowerCase().includes(q));
+  }, [query]);
+
+  return (
+    <div>
+      <PageHeader title="SMS Conversations" subtitle="Most recent message per conversation thread." tool="Google Sheets (SMS Conversations)" />
+      <input
+        type="text"
+        placeholder="Search by contact or message text..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+      />
+      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {smsList.length} conversations</p>
+      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-white">
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-4 font-medium">Last message</th>
+              <th className="py-2 pr-4 font-medium">Contact</th>
+              <th className="py-2 pr-4 font-medium">Text</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((s, i) => (
+              <tr key={`${s.contactName}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{s.date}</td>
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{s.contactName}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 max-w-xl">{s.text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function ContactsView() {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phone.includes(q)
+    );
+  }, [query]);
+
+  return (
+    <div>
+      <PageHeader title="Contacts" subtitle="Everyone in the system — students, staff, and misc entries." tool="Google Sheets (Contacts)" />
+      <input
+        type="text"
+        placeholder="Search by name, email, or phone..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+      />
+      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {contacts.length} contacts</p>
+      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-white">
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">Email</th>
+              <th className="py-2 pr-4 font-medium">Phone</th>
+              <th className="py-2 pr-4 font-medium">Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((c, i) => (
+              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0">
+                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name}</td>
+                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.email || "—"}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.phone || "—"}</td>
+                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.contactType}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+function ReportsView() {
+  const bySection = useMemo(() => {
+    const groups = new Map<string, typeof reportsIndex>();
+    for (const r of reportsIndex) {
+      if (!groups.has(r.section)) groups.set(r.section, []);
+      groups.get(r.section)!.push(r);
+    }
+    return Array.from(groups.entries());
+  }, []);
+
+  return (
+    <div>
+      <PageHeader title="Reports Index" subtitle="Every report available in the membership platform, grouped by section." tool="Google Sheets (Reports Index)" />
+      <div className="grid sm:grid-cols-3 gap-4">
+        {bySection.map(([section, reports]) => (
+          <Card key={section}>
+            <p className="text-base font-semibold text-neutral-900 mb-3">{section}</p>
+            <ul className="space-y-2">
+              {reports.map((r) => (
+                <li key={r.urlPath} className="text-sm text-neutral-600">
+                  {r.name}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
