@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateTabRowCells, SheetsNotConfiguredError, SheetTabMissingError } from "@/lib/googleSheetsServer";
-import { notifyGrok, GrokNotConfiguredError } from "@/lib/notifyGrok";
+import { notifyGrok } from "@/lib/notifyGrok";
+import { webhookErrorResponse } from "@/lib/webhookResponse";
 
 const TAB = "Past Due";
 
@@ -35,13 +36,15 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// Marks a draft as ready to go out and tells Grok — Grok is the only thing
-// that actually sends; this app never sends email/SMS directly.
+// Saves the edited subject/body, marks Email Status (column M) Queued, then
+// tells Grok. Grok is the only thing that actually sends.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const row = Number(body?.row);
     const email: string | undefined = body?.email;
+    const subject: string | undefined = body?.subject;
+    const messageBody: string | undefined = body?.messageBody;
 
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
@@ -50,15 +53,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "This contact has no email on file — can't send." }, { status: 400 });
     }
 
+    const content: Record<string, string> = {};
+    if (subject !== undefined) content["Email Subject"] = subject ?? "";
+    if (messageBody !== undefined) content["Email Body"] = messageBody;
+    if (Object.keys(content).length > 0) {
+      await updateTabRowCells(TAB, row, content);
+    }
     await updateTabRowCells(TAB, row, { "Email Status": "Queued" });
 
     try {
-      await notifyGrok({ tab: "Past Due", row, kind: "past-due" });
+      await notifyGrok({ tab: "Past Due", rows: [row], kind: "past-due" });
     } catch (err) {
-      if (err instanceof GrokNotConfiguredError) {
-        return NextResponse.json({ ok: true, queued: true, grokWarning: err.message });
-      }
-      return NextResponse.json({ ok: true, queued: true, grokWarning: err instanceof Error ? err.message : "Couldn't notify Grok." });
+      return webhookErrorResponse(err);
     }
 
     return NextResponse.json({ ok: true, queued: true });
