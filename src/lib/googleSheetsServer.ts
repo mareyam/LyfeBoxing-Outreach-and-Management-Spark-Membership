@@ -132,6 +132,53 @@ function isMissingTabError(err: unknown, tabName: string): boolean {
   return message.includes("Unable to parse range") || message.includes(`${tabName}'!`) || message.includes(tabName);
 }
 
+/**
+ * Generic header-based tab reader: row 1 is treated as column names, and
+ * each data row comes back as {header: value}. Used for the read-only
+ * reference pages (Memberships, Summary, Cancelled, Past Due, Payments,
+ * SMS Conversations, Contacts) so this app never bakes real member data
+ * into source files — it's always read live from the sheet.
+ */
+export async function readTabRows(tabName: string): Promise<Record<string, string>[]> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A1:ZZ`,
+    });
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+
+  const rows = res.data.values ?? [];
+  if (rows.length === 0) return [];
+  const headers = rows[0].map((h) => (h ?? "").toString().trim());
+  return rows.slice(1).map((row) => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      if (h) obj[h] = (row[idx] ?? "").toString();
+    });
+    return obj;
+  });
+}
+
+/** Raw rows, no header assumption — used for the Summary tab (key/value pairs, not a table). */
+export async function readRawRows(tabName: string): Promise<string[][]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A1:ZZ`,
+    });
+    return (res.data.values ?? []).map((r) => r.map((c) => (c ?? "").toString()));
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+}
+
 export async function appendAppointmentRequest(input: {
   date: string;
   time: string;

@@ -1,169 +1,288 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Mail, MessageSquare } from "lucide-react";
-import { memberships } from "@/lib/lyfeBoxingData";
-import {
-  summary,
-  cancellations,
-  pastDue,
-  reportsIndex,
-  contacts,
-  paymentsList,
-  smsList,
-} from "@/lib/lyfeBoxingOthersData";
-import { AlertCircle, Calendar as CalendarIcon, Plus, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, Mail, MessageSquare, Plus, Sparkles } from "lucide-react";
+import { reportsIndex } from "@/lib/lyfeBoxingReports";
 import { Badge, Card, PageHeader, Stat } from "@/components/ui";
 
-function parseMoney(v: string) {
-  return Number(v.replace(/[^0-9.-]/g, "")) || 0;
+// ---------------------------------------------------------------------------
+// Shared live-data fetching. Every page here reads straight from the Google
+// Sheet at request time via /api/lyfe-data — nothing in this file holds
+// real member data. Column names are matched fuzzily (see findField) since
+// the exact header text in the live sheet may not match these guesses
+// exactly; unmatched fields just render blank instead of crashing.
+// ---------------------------------------------------------------------------
+
+type SheetRow = Record<string, string>;
+
+type FetchState =
+  | { status: "loading" }
+  | { status: "ok"; rows: SheetRow[] }
+  | { status: "not-configured" }
+  | { status: "tab-missing"; tabName: string }
+  | { status: "error"; message: string };
+
+function useSheetTab(tab: string) {
+  const [state, setState] = useState<FetchState>({ status: "loading" });
+
+  const reload = useCallback(() => {
+    setState({ status: "loading" });
+    fetch(`/api/lyfe-data?tab=${encodeURIComponent(tab)}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.notConfigured) return setState({ status: "not-configured" });
+          if (data.tabMissing) return setState({ status: "tab-missing", tabName: tab });
+          return setState({ status: "error", message: data.error ?? "Failed to load." });
+        }
+        setState({ status: "ok", rows: data.rows ?? [] });
+      })
+      .catch(() => setState({ status: "error", message: "Failed to load." }));
+  }, [tab]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
+    reload();
+  }, [reload]);
+
+  return { state, reload };
 }
 
-export function MembershipsView() {
-  const [query, setQuery] = useState("");
-  const [membershipFilter, setMembershipFilter] = useState("All");
+type SummaryState =
+  | { status: "loading" }
+  | { status: "ok"; raw: string[][] }
+  | { status: "not-configured" }
+  | { status: "tab-missing" }
+  | { status: "error"; message: string };
 
-  const membershipTypes = useMemo(() => {
-    const types = Array.from(new Set(memberships.map((m) => m.membership))).sort();
-    return ["All", ...types];
+function useSummaryTab() {
+  const [state, setState] = useState<SummaryState>({ status: "loading" });
+  useEffect(() => {
+    fetch(`/api/lyfe-data?tab=${encodeURIComponent("Summary")}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.notConfigured) return setState({ status: "not-configured" });
+          if (data.tabMissing) return setState({ status: "tab-missing" });
+          return setState({ status: "error", message: data.error ?? "Failed to load." });
+        }
+        setState({ status: "ok", raw: data.raw ?? [] });
+      })
+      .catch(() => setState({ status: "error", message: "Failed to load." }));
   }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return memberships.filter((m) => {
-      const matchesQuery =
-        !q ||
-        m.name.toLowerCase().includes(q) ||
-        m.membership.toLowerCase().includes(q) ||
-        m.staff.toLowerCase().includes(q);
-      const matchesType = membershipFilter === "All" || m.membership === membershipFilter;
-      return matchesQuery && matchesType;
-    });
-  }, [query, membershipFilter]);
-
-  const activeCount = memberships.filter((m) => m.expires === "Open Ended").length;
-  const totalWeeklyRevenue = memberships.reduce((sum, m) => sum + parseMoney(m.totalMonthlyPayment), 0);
-  const overdueCount = memberships.filter((m) => parseMoney(m.overdue) > 0).length;
-
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- Map-based reduction; compiler can't statically preserve this, but memberships is module-level static data so re-running is cheap and correct
-  const byMembership = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const m of memberships) counts.set(m.membership, (counts.get(m.membership) ?? 0) + 1);
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, []);
-
-  return (
-    <div className="max-w-6xl">
-      <PageHeader
-        title="Lyfe Boxing — Memberships"
-        subtitle="Who's on which membership, what they owe, and when their next payment is due."
-        tool="Google Sheets (All Memberships)"
-      />
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <Stat label="Total members" value={memberships.length} />
-        <Stat label="Open-ended / active" value={activeCount} />
-        <Stat label="Overdue balances" value={overdueCount} />
-        <Stat label="Total billed value" value={`$${totalWeeklyRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
-      </div>
-
-      <Card className="mb-6">
-        <p className="text-base text-neutral-500 mb-3">Members per plan</p>
-        <div className="flex flex-wrap gap-2">
-          {byMembership.map(([name, count]) => (
-            <span
-              key={name}
-              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700"
-            >
-              {name} <span className="text-neutral-400">· {count}</span>
-            </span>
-          ))}
-        </div>
-      </Card>
-
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <input
-          type="text"
-          placeholder="Search by name, plan, or staff..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-        />
-        <select
-          value={membershipFilter}
-          onChange={(e) => setMembershipFilter(e.target.value)}
-          className="w-full sm:w-64 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-        >
-          {membershipTypes.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <p className="text-sm text-neutral-400 mb-3">
-        Showing {filtered.length} of {memberships.length} members
-      </p>
-
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Student</th>
-              <th className="py-2 pr-4 font-medium">Membership</th>
-              <th className="py-2 pr-4 font-medium">Signed</th>
-              <th className="py-2 pr-4 font-medium">Expires</th>
-              <th className="py-2 pr-4 font-medium">Payment</th>
-              <th className="py-2 pr-4 font-medium">Overdue</th>
-              <th className="py-2 pr-4 font-medium">Next payment</th>
-              <th className="py-2 pr-4 font-medium">Staff</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((m, i) => {
-              const isOverdue = parseMoney(m.overdue) > 0;
-              return (
-                <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0">
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{m.membership}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.signed}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires}</td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{m.payment}</td>
-                  <td className={`py-2.5 pr-4 whitespace-nowrap ${isOverdue ? "text-neutral-900 font-medium" : "text-neutral-400"}`}>
-                    {m.overdue}
-                  </td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.staff}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-    </div>
-  );
+  return state;
 }
 
-export function SummaryView() {
-  return (
-    <div className="max-w-6xl">
-      <PageHeader title="Summary" subtitle="Financial and membership summary for Oct 1–25." tool="Google Sheets (Summary)" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        {summary.map(([label, value]) => (
-          <Stat key={label} label={label} value={value} />
-        ))}
-      </div>
-    </div>
-  );
+function findField(row: SheetRow, ...candidates: string[]): string {
+  const keys = Object.keys(row);
+  for (const c of candidates) {
+    const exact = keys.find((k) => k.toLowerCase() === c.toLowerCase());
+    if (exact) return row[exact] ?? "";
+  }
+  for (const c of candidates) {
+    const partial = keys.find((k) => k.toLowerCase().includes(c.toLowerCase()));
+    if (partial) return row[partial] ?? "";
+  }
+  return "";
+}
+
+function parseMoney(v: string): number {
+  return Number((v ?? "").replace(/[^0-9.-]/g, "")) || 0;
 }
 
 function parseSlashDate(dateStr: string): Date | null {
-  const m = (dateStr ?? "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  const m = (dateStr ?? "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{1,4})/);
   if (!m) return null;
   const [, mm, dd, yyyy] = m;
   return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
 }
+
+function SetupNeeded() {
+  return (
+    <Card className="border-amber-200 bg-amber-50">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-neutral-900">Google Sheets isn&apos;t connected yet</p>
+          <p className="text-sm text-neutral-600 mt-1 max-w-xl">
+            Set <code className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-xs">GOOGLE_SHEETS_SPREADSHEET_ID</code>,{" "}
+            <code className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-xs">GOOGLE_SHEETS_CLIENT_EMAIL</code>, and{" "}
+            <code className="bg-white px-1.5 py-0.5 rounded border border-amber-200 text-xs">GOOGLE_SHEETS_PRIVATE_KEY</code> as
+            environment variables, and share the sheet with that service account&apos;s email.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function SheetErrorCard({ message }: { message: string }) {
+  return (
+    <Card className="border-red-200 bg-red-50">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-neutral-900">Couldn&apos;t load this sheet</p>
+          <p className="text-sm text-neutral-600 mt-1">{message}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function TabMissingCard({ tabName }: { tabName: string }) {
+  return (
+    <Card className="text-center py-12">
+      <AlertCircle className="h-8 w-8 text-neutral-300 mx-auto" strokeWidth={1.5} />
+      <p className="font-semibold text-neutral-900 mt-3">Waiting on the &quot;{tabName}&quot; tab</p>
+      <p className="text-sm text-neutral-500 mt-1 max-w-sm mx-auto">
+        Once this tab is added to the Spark Memberships sheet with the right columns, this page will start showing data automatically.
+      </p>
+    </Card>
+  );
+}
+
+function LoadingCard() {
+  return <div className="h-40 rounded-2xl bg-neutral-100 animate-pulse" />;
+}
+
+/** Renders the right state card and calls children(rows) only once data is ok. */
+function SheetGate({
+  tab,
+  children,
+}: {
+  tab: string;
+  children: (rows: SheetRow[], reload: () => void) => React.ReactNode;
+}) {
+  const { state, reload } = useSheetTab(tab);
+  if (state.status === "loading") return <LoadingCard />;
+  if (state.status === "not-configured") return <SetupNeeded />;
+  if (state.status === "tab-missing") return <TabMissingCard tabName={state.tabName} />;
+  if (state.status === "error") return <SheetErrorCard message={state.message} />;
+  return <>{children(state.rows, reload)}</>;
+}
+
+// ---------------------------------------------------------------------------
+// Memberships
+// ---------------------------------------------------------------------------
+
+export function MembershipsView() {
+  const [query, setQuery] = useState("");
+
+  return (
+    <div className="max-w-6xl">
+      <PageHeader title="All Memberships" subtitle="Live roster from the Spark Memberships sheet." tool="Google Sheets (All Memberships)" />
+      <SheetGate tab="All Memberships">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            name: findField(r, "name", "member", "member name"),
+            membership: findField(r, "membership"),
+            expires: findField(r, "expires"),
+            overdue: findField(r, "overdue"),
+            nextPayment: findField(r, "next payment"),
+            method: findField(r, "method"),
+            staff: findField(r, "staff"),
+          }));
+
+          const q = query.trim().toLowerCase();
+          const filtered = q
+            ? mapped.filter((m) => m.name.toLowerCase().includes(q) || m.membership.toLowerCase().includes(q))
+            : mapped;
+
+          const activeCount = mapped.filter((m) => m.expires.toLowerCase().includes("open")).length;
+          const overdueCount = mapped.filter((m) => parseMoney(m.overdue) > 0).length;
+
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                <Stat label="Total members" value={mapped.length} />
+                <Stat label="Open-ended" value={activeCount} />
+                <Stat label="Overdue" value={overdueCount} />
+              </div>
+              <input
+                type="text"
+                placeholder="Search by name or plan..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-sm text-neutral-400 mb-3">
+                Showing {filtered.length} of {mapped.length} members
+              </p>
+              {filtered.length === 0 ? (
+                <Card className="text-center py-10 text-sm text-neutral-500">No members found.</Card>
+              ) : (
+                <Card className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-neutral-400 border-b border-neutral-100">
+                        <th className="py-2 pr-4 font-medium">Name</th>
+                        <th className="py-2 pr-4 font-medium">Membership</th>
+                        <th className="py-2 pr-4 font-medium">Expires</th>
+                        <th className="py-2 pr-4 font-medium">Overdue</th>
+                        <th className="py-2 pr-4 font-medium">Next Payment</th>
+                        <th className="py-2 pr-4 font-medium">Staff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((m, i) => (
+                        <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                          <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{m.membership || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.overdue || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.staff || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+            </>
+          );
+        }}
+      </SheetGate>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Summary
+// ---------------------------------------------------------------------------
+
+export function SummaryView() {
+  const state = useSummaryTab();
+  return (
+    <div className="max-w-3xl">
+      <PageHeader title="Summary" subtitle="Key numbers from the Spark Memberships sheet." tool="Google Sheets (Summary)" />
+      {state.status === "loading" && <LoadingCard />}
+      {state.status === "not-configured" && <SetupNeeded />}
+      {state.status === "tab-missing" && <TabMissingCard tabName="Summary" />}
+      {state.status === "error" && <SheetErrorCard message={state.message} />}
+      {state.status === "ok" && (
+        <Card>
+          <dl className="divide-y divide-neutral-100">
+            {state.raw.length === 0 ? (
+              <p className="text-sm text-neutral-500 py-2">No rows in the Summary tab yet.</p>
+            ) : (
+              state.raw.map(([label, value], i) => (
+                <div key={i} className="flex items-center justify-between py-2.5">
+                  <dt className="text-sm text-neutral-500">{label}</dt>
+                  <dd className="text-sm font-medium text-neutral-900">{value}</dd>
+                </div>
+              ))
+            )}
+          </dl>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cancelled + Win-back
+// ---------------------------------------------------------------------------
 
 const WINBACK_EMAIL = {
   campaignName: "Win-back: Free comeback class",
@@ -177,8 +296,7 @@ const WINBACK_SMS = {
   campaignName: "Win-back: Why'd you leave?",
   channel: "SMS" as const,
   subject: "",
-  messageBody:
-    "Hey {First name}, it's Lyfe Boxing. We noticed you stepped away — mind telling us why? Just reply, we read every one. 🥊",
+  messageBody: "Hey {First name}, it's Lyfe Boxing. We noticed you stepped away — mind telling us why? Just reply, we read every one. 🥊",
 };
 
 function WinbackSection({ eligibleCount }: { eligibleCount: number }) {
@@ -239,391 +357,394 @@ function WinbackSection({ eligibleCount }: { eligibleCount: number }) {
 export function CancelledView() {
   const [query, setQuery] = useState("");
 
-  const winbackEligible = useMemo(() => {
-    // eslint-disable-next-line react-hooks/purity -- intentionally evaluated fresh each render: this is a point-in-time "days since cancellation" check, not cached state
-    const now = Date.now();
-    return cancellations.filter((c) => {
-      const d = parseSlashDate(c.cancelledDate);
-      return d !== null && now - d.getTime() >= 14 * 86_400_000;
-    }).length;
-  }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return cancellations;
-    return cancellations.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.membership.toLowerCase().includes(q) ||
-        c.quitCategory.toLowerCase().includes(q)
-    );
-  }, [query]);
-
-  const byCategory = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const c of cancellations) counts.set(c.quitCategory, (counts.get(c.quitCategory) ?? 0) + 1);
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, []);
-
   return (
     <div className="max-w-6xl">
       <PageHeader title="Cancelled (October)" subtitle="Members who cancelled this month, with reason and category." tool="Google Sheets (Cancelled Oct)" />
-      <WinbackSection eligibleCount={winbackEligible} />
-      <Card className="mb-6">
-        <p className="text-base text-neutral-500 mb-3">Cancellations by category</p>
-        <div className="flex flex-wrap gap-2">
-          {byCategory.map(([name, count]) => (
-            <span key={name} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700">
-              {name} <span className="text-neutral-400">· {count}</span>
-            </span>
-          ))}
-        </div>
-      </Card>
-      <input
-        type="text"
-        placeholder="Search by name, plan, or reason category..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {cancellations.length} cancellations</p>
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Membership</th>
-              <th className="py-2 pr-4 font-medium">Signed</th>
-              <th className="py-2 pr-4 font-medium">Cancelled</th>
-              <th className="py-2 pr-4 font-medium">Category</th>
-              <th className="py-2 pr-4 font-medium">Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((c, i) => (
-              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <SheetGate tab="Cancelled (Oct)">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            name: findField(r, "name"),
+            membership: findField(r, "membership"),
+            signedDate: findField(r, "signed"),
+            cancelledDate: findField(r, "cancelled date", "cancelled"),
+            quitCategory: findField(r, "quit category", "category"),
+            reason: findField(r, "reason"),
+          }));
+
+          const winbackEligible = mapped.filter((c) => {
+            const d = parseSlashDate(c.cancelledDate);
+            return d !== null && Date.now() - d.getTime() >= 14 * 86_400_000;
+          }).length;
+
+          const byCategory = new Map<string, number>();
+          for (const c of mapped) {
+            const key = c.quitCategory || "Not Assigned";
+            byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
+          }
+          const categoryList = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1]);
+
+          const q = query.trim().toLowerCase();
+          const filtered = q
+            ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q))
+            : mapped;
+
+          return (
+            <>
+              <WinbackSection eligibleCount={winbackEligible} />
+              <Card className="mb-6">
+                <p className="text-base text-neutral-500 mb-3">Cancellations by category</p>
+                <div className="flex flex-wrap gap-2">
+                  {categoryList.map(([name, count]) => (
+                    <span key={name} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700">
+                      {name} <span className="text-neutral-400">· {count}</span>
+                    </span>
+                  ))}
+                </div>
+              </Card>
+              <input
+                type="text"
+                placeholder="Search by name, plan, or reason category..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-sm text-neutral-400 mb-3">
+                Showing {filtered.length} of {mapped.length} cancellations
+              </p>
+              <Card className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-neutral-400 border-b border-neutral-100">
+                      <th className="py-2 pr-4 font-medium">Name</th>
+                      <th className="py-2 pr-4 font-medium">Membership</th>
+                      <th className="py-2 pr-4 font-medium">Signed</th>
+                      <th className="py-2 pr-4 font-medium">Cancelled</th>
+                      <th className="py-2 pr-4 font-medium">Category</th>
+                      <th className="py-2 pr-4 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((c, i) => (
+                      <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                        <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Past Due
+// ---------------------------------------------------------------------------
 
 export function PastDueView() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const open = openIndex !== null ? pastDue[openIndex] : null;
 
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="Past Due" subtitle="Members with failed or missed autoCharge payments." tool="Google Sheets (Past Due)" />
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Due</th>
-              <th className="py-2 pr-4 font-medium">Contact</th>
-              <th className="py-2 pr-4 font-medium">Contact details</th>
-              <th className="py-2 pr-4 font-medium">Membership</th>
-              <th className="py-2 pr-4 font-medium">Attempts</th>
-              <th className="py-2 pr-4 font-medium">Last attempt</th>
-              <th className="py-2 pr-4 font-medium">Payment amount</th>
-              <th className="py-2 pr-4 font-medium">Total overdue</th>
-              <th className="py-2 pr-4 font-medium">Email</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pastDue.map((p, i) => (
-              <tr key={`${p.contact}-${i}`} className="border-b border-neutral-50 last:border-0">
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.due}</td>
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.contact}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.contactDetails}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.description}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.attempts}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.lastAttempt}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.paymentAmount}</td>
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.totalOverdue}</td>
-                <td className="py-2.5 pr-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    <Badge>{p.emailStatus}</Badge>
-                    <button
-                      onClick={() => setOpenIndex(i)}
-                      className="text-sm text-neutral-500 underline underline-offset-2 hover:text-neutral-900"
-                    >
-                      View email
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+    <div className="max-w-5xl">
+      <PageHeader title="Past Due" subtitle="Members behind on payment, with the draft collections email for each." tool="Google Sheets (Past Due)" />
+      <SheetGate tab="Past Due">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            name: findField(r, "contact", "name", "member"),
+            totalOverdue: findField(r, "total overdue"),
+            paymentAmount: findField(r, "payment amount"),
+            lastAttempt: findField(r, "last attempt"),
+            emailSubject: findField(r, "email subject"),
+            emailBody: findField(r, "email body"),
+            emailStatus: findField(r, "email status"),
+          }));
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-          onClick={() => setOpenIndex(null)}
-        >
-          <div
-            className="w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <p className="text-sm text-neutral-400">Email to {open.contact}</p>
-                <p className="text-base font-semibold text-neutral-900 mt-0.5">{open.emailSubject}</p>
+          const totalOwed = mapped.reduce((sum, m) => sum + parseMoney(m.totalOverdue), 0);
+          const open = openIndex !== null ? mapped[openIndex] : null;
+
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                <Stat label="Members past due" value={mapped.length} />
+                <Stat label="Total overdue amount" value={`$${totalOwed.toLocaleString()}`} />
               </div>
-              <Badge>{open.emailStatus}</Badge>
-            </div>
-            <p className="text-sm text-neutral-500 mb-4">{open.email}</p>
-            <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm text-neutral-700 whitespace-pre-wrap">
-              {open.emailBody}
-            </div>
-            <button
-              onClick={() => setOpenIndex(null)}
-              className="mt-5 w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+
+              {mapped.length === 0 ? (
+                <Card className="text-center py-10 text-sm text-neutral-500">No one is past due.</Card>
+              ) : (
+                <div className="space-y-3">
+                  {mapped.map((m, i) => (
+                    <Card key={i}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
+                          <p className="text-sm text-neutral-500 mt-0.5">
+                            {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
+                            {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {m.emailStatus && <Badge>{m.emailStatus}</Badge>}
+                          {m.emailBody ? (
+                            <button
+                              onClick={() => setOpenIndex(i)}
+                              className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                            >
+                              View email
+                            </button>
+                          ) : (
+                            <span className="text-xs text-neutral-400">No email drafted</span>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {open && (
+                <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={() => setOpenIndex(null)}>
+                  <div
+                    className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-sm text-neutral-400">Email to {open.name}</p>
+                    <p className="text-base font-semibold text-neutral-900 mt-0.5">{open.emailSubject || "(no subject)"}</p>
+                    <p className="text-sm text-neutral-700 whitespace-pre-line leading-relaxed mt-4">{open.emailBody}</p>
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
 
-function parsePaymentDate(dateStr: string): Date | null {
-  const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (!m) return null;
-  const [, mm, dd, yyyy] = m;
-  return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-}
-
-function toInputDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function addMonths(d: Date, months: number): Date {
-  const result = new Date(d);
-  result.setMonth(result.getMonth() + months);
-  return result;
-}
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
 
 export function PaymentsView() {
-  const [query, setQuery] = useState("");
-
-  const earliestDate = useMemo(() => {
-    const dates = paymentsList.map((p) => parsePaymentDate(p.date)).filter((d): d is Date => d !== null);
-    return dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date();
-  }, []);
-
-  const [fromDate, setFromDate] = useState(() => toInputDate(earliestDate));
-  const toDate = useMemo(() => toInputDate(addMonths(new Date(fromDate), 1)), [fromDate]);
-
-  const dateFiltered = useMemo(() => {
-    const from = new Date(fromDate);
-    const to = new Date(toDate);
-    return paymentsList.filter((p) => {
-      const d = parsePaymentDate(p.date);
-      return d !== null && d >= from && d < to;
-    });
-  }, [fromDate, toDate]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return dateFiltered;
-    return dateFiltered.filter(
-      (p) => p.memberName.toLowerCase().includes(q) || p.item.toLowerCase().includes(q) || p.paymentType.toLowerCase().includes(q)
-    );
-  }, [dateFiltered, query]);
-
-  const totalPaid = useMemo(() => dateFiltered.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0), [dateFiltered]);
-
   return (
     <div className="max-w-6xl">
-      <PageHeader title="Payments" subtitle="Every payment captured in a one-month window, by member and method." tool="Google Sheets (Payments Oct 1-25)" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Stat label="Payments recorded" value={dateFiltered.length} />
-        <Stat label="Total collected" value={`$${totalPaid.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <label className="flex items-center gap-2 text-sm text-neutral-600">
-          From
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-          />
-        </label>
-        <span className="text-sm text-neutral-400 self-center">1-month window, through {toDate}</span>
-        <input
-          type="text"
-          placeholder="Search by name, item, or card type..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-        />
-      </div>
-      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {dateFiltered.length} payments in this window ({paymentsList.length} total on record)</p>
-      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white">
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Date</th>
-              <th className="py-2 pr-4 font-medium">Member</th>
-              <th className="py-2 pr-4 font-medium">Item</th>
-              <th className="py-2 pr-4 font-medium">Type</th>
-              <th className="py-2 pr-4 font-medium">Amount</th>
-              <th className="py-2 pr-4 font-medium">Invoice #</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p, i) => (
-              <tr key={`${p.invoiceNumber}-${i}`} className="border-b border-neutral-50 last:border-0">
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.date}</td>
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.memberName}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 max-w-sm truncate">{p.item}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{p.paymentType}</td>
-                <td className="py-2.5 pr-4 text-neutral-900 whitespace-nowrap">{p.amountPaid}</td>
-                <td className="py-2.5 pr-4 text-neutral-400 whitespace-nowrap">{p.invoiceNumber}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <PageHeader title="Payments (Oct 1-25)" subtitle="All payment activity in the period." tool="Google Sheets (Payments)" />
+      <SheetGate tab="Payments (Oct 1-25)">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            date: findField(r, "date"),
+            memberName: findField(r, "member name", "name"),
+            status: findField(r, "status"),
+            item: findField(r, "item"),
+            paymentType: findField(r, "payment type"),
+            amountPaid: findField(r, "amount paid", "amount"),
+          }));
+          const total = mapped.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0);
+
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                <Stat label="Payments" value={mapped.length} />
+                <Stat label="Total collected" value={`$${total.toLocaleString()}`} />
+              </div>
+              {mapped.length === 0 ? (
+                <Card className="text-center py-10 text-sm text-neutral-500">No payments in this period yet.</Card>
+              ) : (
+                <Card className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-neutral-400 border-b border-neutral-100">
+                        <th className="py-2 pr-4 font-medium">Date</th>
+                        <th className="py-2 pr-4 font-medium">Member</th>
+                        <th className="py-2 pr-4 font-medium">Item</th>
+                        <th className="py-2 pr-4 font-medium">Type</th>
+                        <th className="py-2 pr-4 font-medium">Status</th>
+                        <th className="py-2 pr-4 font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mapped.map((p, i) => (
+                        <tr key={i} className="border-b border-neutral-50 last:border-0 align-top">
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.date || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.memberName || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{p.item || "—"}</td>
+                          <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.paymentType || "—"}</td>
+                          <td className="py-2.5 pr-4 whitespace-nowrap">
+                            <Badge>{p.status || "—"}</Badge>
+                          </td>
+                          <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.amountPaid || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+            </>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// SMS Conversations
+// ---------------------------------------------------------------------------
 
 export function SmsView() {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return smsList;
-    return smsList.filter((s) => s.contactName.toLowerCase().includes(q) || s.text.toLowerCase().includes(q));
-  }, [query]);
 
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="SMS Conversations" subtitle="Most recent message per conversation thread." tool="Google Sheets (SMS Conversations)" />
-      <input
-        type="text"
-        placeholder="Search by contact or message text..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {smsList.length} conversations</p>
-      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white">
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Last message</th>
-              <th className="py-2 pr-4 font-medium">Contact</th>
-              <th className="py-2 pr-4 font-medium">Text</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((s, i) => (
-              <tr key={`${s.contactName}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{s.date || "Broadcast"}</td>
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{s.contactName}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 max-w-xl break-words">{s.text}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+    <div className="max-w-5xl">
+      <PageHeader title="SMS Conversations" subtitle="Recent text message activity." tool="Google Sheets (SMS Conversations)" />
+      <SheetGate tab="SMS Conversations">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            date: findField(r, "date"),
+            contactName: findField(r, "contact name", "name"),
+            text: findField(r, "text", "message"),
+          }));
+          const q = query.trim().toLowerCase();
+          const filtered = q ? mapped.filter((s) => s.contactName.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)) : mapped;
+
+          return (
+            <>
+              <input
+                type="text"
+                placeholder="Search by name or message..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-sm text-neutral-400 mb-3">
+                Showing {filtered.length} of {mapped.length} conversations
+              </p>
+              {filtered.length === 0 ? (
+                <Card className="text-center py-10 text-sm text-neutral-500">No conversations found.</Card>
+              ) : (
+                <div className="space-y-2">
+                  {filtered.map((s, i) => (
+                    <Card key={i}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-medium text-neutral-900 text-sm">{s.contactName || "Unknown"}</p>
+                        <p className="text-xs text-neutral-400">{s.date}</p>
+                      </div>
+                      <p className="text-sm text-neutral-600">{s.text}</p>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Contacts
+// ---------------------------------------------------------------------------
 
 export function ContactsView() {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phone.includes(q)
-    );
-  }, [query]);
 
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="Contacts" subtitle="Everyone in the system — students, staff, and misc entries." tool="Google Sheets (Contacts)" />
-      <input
-        type="text"
-        placeholder="Search by name, email, or phone..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">Showing {filtered.length} of {contacts.length} contacts</p>
-      <Card className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white">
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Email</th>
-              <th className="py-2 pr-4 font-medium">Phone</th>
-              <th className="py-2 pr-4 font-medium">Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((c, i) => (
-              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0">
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.email || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.phone || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.contactType}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+    <div className="max-w-4xl">
+      <PageHeader title="Contacts" subtitle="Everyone in the Spark contacts list." tool="Google Sheets (Contacts)" />
+      <SheetGate tab="Contacts">
+        {(rows) => {
+          const mapped = rows.map((r) => ({
+            name: findField(r, "name"),
+            email: findField(r, "email"),
+            phone: findField(r, "phone"),
+            contactType: findField(r, "contact type", "type"),
+          }));
+          const q = query.trim().toLowerCase();
+          const filtered = q ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)) : mapped;
+
+          return (
+            <>
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-sm text-neutral-400 mb-3">
+                Showing {filtered.length} of {mapped.length} contacts
+              </p>
+              {filtered.length === 0 ? (
+                <Card className="text-center py-10 text-sm text-neutral-500">No contacts found.</Card>
+              ) : (
+                <div className="space-y-2">
+                  {filtered.map((c, i) => (
+                    <Card key={i} className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-neutral-900 text-sm">{c.name || "Unnamed"}</p>
+                        <p className="text-sm text-neutral-500 mt-0.5">{c.email || "No email"} {c.phone ? `· ${c.phone}` : ""}</p>
+                      </div>
+                      {c.contactType && <Badge>{c.contactType}</Badge>}
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Reports Index (static — just links into Spark's own reports, no member data)
+// ---------------------------------------------------------------------------
+
 export function ReportsView() {
-  const bySection = useMemo(() => {
-    const groups = new Map<string, typeof reportsIndex>();
+  const sections = useMemo(() => {
+    const bySection = new Map<string, typeof reportsIndex>();
     for (const r of reportsIndex) {
-      if (!groups.has(r.section)) groups.set(r.section, []);
-      groups.get(r.section)!.push(r);
+      if (!bySection.has(r.section)) bySection.set(r.section, []);
+      bySection.get(r.section)!.push(r);
     }
-    return Array.from(groups.entries());
+    return Array.from(bySection.entries());
   }, []);
 
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="Reports Index" subtitle="Every report available in the membership platform, grouped by section." tool="Google Sheets (Reports Index)" />
-      <div className="grid sm:grid-cols-3 gap-4">
-        {bySection.map(([section, reports]) => (
-          <Card key={section}>
-            <p className="text-base font-semibold text-neutral-900 mb-3">{section}</p>
-            <ul className="space-y-2">
-              {reports.map((r) => (
-                <li key={r.urlPath} className="text-sm text-neutral-600">
+    <div className="max-w-4xl">
+      <PageHeader title="Reports Index" subtitle="Links into Spark's own report pages." />
+      <div className="space-y-6">
+        {sections.map(([section, items]) => (
+          <div key={section}>
+            <p className="text-sm font-semibold text-neutral-900 mb-2">{section}</p>
+            <Card className="divide-y divide-neutral-100">
+              {items.map((r) => (
+                <div key={r.urlPath} className="py-2 text-sm text-neutral-600">
                   {r.name}
-                </li>
+                </div>
               ))}
-            </ul>
-          </Card>
+            </Card>
+          </div>
         ))}
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Campaigns
+// ---------------------------------------------------------------------------
 
 type Campaign = {
   row: number;
@@ -632,32 +753,33 @@ type Campaign = {
   audience: string;
   subject: string;
   messageBody: string;
-  send: boolean;
   status: string;
   recipients: string;
   sentAt: string;
-  notes: string;
 };
 
 function nextSendWindowPKT(): string {
   const now = new Date();
   const pktNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-  const candidates = [0, 15].map((hour) => {
+  const candidates = [3, 12, 15, 24].map((h) => {
     const d = new Date(pktNow);
-    d.setHours(hour, 0, 0, 0);
-    if (d <= pktNow) d.setDate(d.getDate() + 1);
+    d.setHours(h % 24, 0, 0, 0);
+    if (h === 24) d.setDate(d.getDate() + 1);
     return d;
   });
-  const next = candidates.sort((a, b) => a.getTime() - b.getTime())[0];
-  const label = next.getHours() === 0 ? "12 AM" : "3 PM";
-  const dayLabel = next.toDateString() === pktNow.toDateString() ? "today" : "tomorrow";
-  return `${label} PKT ${dayLabel}`;
+  const next = candidates.find((d) => d.getTime() > pktNow.getTime()) ?? candidates[0];
+  return next.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) + " PKT";
 }
 
 const audienceOptions = [
   "All active members",
   "Past due members",
-  ...Array.from(new Set(memberships.map((m) => m.membership))).sort(),
+  "Basic Boxer 2x",
+  "Knock Out Boxer Unlimited",
+  "Light Boxer 1x",
+  "Knock Out Boxer 3x",
+  "1 Day Boxing Program",
+  "Ignite Pro | Adult Boxing | 3-Class Trial for $19.95",
 ];
 
 export function CampaignsView() {
@@ -668,7 +790,7 @@ export function CampaignsView() {
   const [sendingRow, setSendingRow] = useState<number | null>(null);
   const nextWindow = useMemo(() => nextSendWindowPKT(), []);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const res = await fetch("/api/campaigns");
       const data = await res.json();
@@ -683,12 +805,12 @@ export function CampaignsView() {
     } catch {
       setError("Failed to load campaigns.");
     }
-  }
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
     load();
-  }, []);
+  }, [load]);
 
   async function handleSend(row: number) {
     setSendingRow(row);
@@ -741,8 +863,8 @@ export function CampaignsView() {
       {notConfigured && (
         <Card className="mb-6 border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-800">
-            Campaigns aren&apos;t wired up yet — the Google service account needs edit access to the sheet,
-            and its credentials need to be set as environment variables on this deployment.
+            Campaigns aren&apos;t wired up yet — the Google service account needs edit access to the sheet, and its credentials
+            need to be set as environment variables on this deployment.
           </p>
         </Card>
       )}
@@ -752,9 +874,7 @@ export function CampaignsView() {
         </Card>
       )}
 
-      {campaigns && campaigns.length === 0 && !error && (
-        <p className="text-sm text-neutral-400">No campaigns yet. Create one above.</p>
-      )}
+      {campaigns && campaigns.length === 0 && !error && <p className="text-sm text-neutral-400">No campaigns yet. Create one above.</p>}
 
       <div className="space-y-3">
         {campaigns?.map((c) => {
@@ -777,9 +897,7 @@ export function CampaignsView() {
                       {c.channel} · {c.audience}
                       {c.recipients && ` · ${c.recipients} recipients`}
                     </p>
-                    {c.channel === "Email" && c.subject && (
-                      <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>
-                    )}
+                    {c.channel === "Email" && c.subject && <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>}
                     <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">{c.messageBody}</p>
                     {c.sentAt && <p className="text-xs text-neutral-400 mt-2">Sent at {c.sentAt}</p>}
                   </div>
@@ -820,8 +938,16 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+    if (channel === "Email" && !subject.trim()) {
+      setError("Subject is required for email campaigns.");
+      return;
+    }
+    if (overSmsLimit) {
+      setError(`SMS message is ${smsLength} characters — keep it under 145.`);
+      return;
+    }
+    setSubmitting(true);
     try {
       const res = await fetch("/api/campaigns", {
         method: "POST",
@@ -833,10 +959,9 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
         setError(data.error ?? "Failed to create campaign.");
         return;
       }
-      setCampaignName("");
-      setSubject("");
-      setMessageBody("");
       onCreated();
+    } catch {
+      setError("Failed to create campaign.");
     } finally {
       setSubmitting(false);
     }
@@ -846,18 +971,19 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
     <Card className="mb-6">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-neutral-600 mb-1.5">Campaign name</label>
+          <label className="text-sm font-medium text-neutral-700 block mb-1">Campaign name</label>
           <input
             required
             value={campaignName}
             onChange={(e) => setCampaignName(e.target.value)}
             className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            placeholder="e.g. October upgrade push"
           />
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-neutral-600 mb-1.5">Channel</label>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Channel</label>
             <select
               value={channel}
               onChange={(e) => setChannel(e.target.value as "Email" | "SMS")}
@@ -868,7 +994,7 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
             </select>
           </div>
           <div>
-            <label className="block text-sm text-neutral-600 mb-1.5">Audience</label>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Audience</label>
             <select
               value={audience}
               onChange={(e) => setAudience(e.target.value)}
@@ -885,25 +1011,22 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
 
         {channel === "Email" && (
           <div>
-            <label className="block text-sm text-neutral-600 mb-1.5">Subject</label>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Subject</label>
             <input
-              required
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              placeholder="Use {First name} for personalization"
             />
           </div>
         )}
 
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-sm text-neutral-600">
-              Message body <span className="text-neutral-400">— use {"{First name}"} to personalize</span>
-            </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm font-medium text-neutral-700">Message body</label>
+            <span className="text-xs text-neutral-400">Use {"{First name}"} for personalization</span>
             {channel === "SMS" && (
-              <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>
-                {smsLength} / 145
-              </span>
+              <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>{smsLength} / 145</span>
             )}
           </div>
           <textarea
@@ -913,9 +1036,7 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
             onChange={(e) => setMessageBody(e.target.value)}
             className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
           />
-          {overSmsLimit && (
-            <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>
-          )}
+          {overSmsLimit && <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>}
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -954,10 +1075,6 @@ const TRIAL_UPGRADE_EMAIL = {
 };
 
 export function TrialConversionView() {
-  const trialMembers = useMemo(
-    () => memberships.filter((m) => TRIAL_MEMBERSHIP_NAMES.includes(m.membership)),
-    []
-  );
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
 
   async function generate() {
@@ -995,12 +1112,8 @@ export function TrialConversionView() {
       <Card className="mb-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <p className="font-semibold text-neutral-900">
-              {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"} found
-            </p>
-            <p className="text-sm text-neutral-500 mt-1">
-              Drafts a first-class SMS and a day-3 upgrade email into Campaigns as Drafts.
-            </p>
+            <p className="font-semibold text-neutral-900">Drafts for trial members</p>
+            <p className="text-sm text-neutral-500 mt-1">Drafts a first-class SMS and a day-3 upgrade email into Campaigns as Drafts.</p>
           </div>
           {state === "done" ? (
             <span className="text-sm font-medium text-neutral-600">Drafts added to Campaigns</span>
@@ -1018,18 +1131,27 @@ export function TrialConversionView() {
         </div>
       </Card>
 
-      {trialMembers.length === 0 ? (
-        <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>
-      ) : (
-        <div className="space-y-3">
-          {trialMembers.map((m, i) => (
-            <Card key={`${m.name}-${i}`}>
-              <p className="font-semibold text-neutral-900">{m.name}</p>
-              <p className="text-sm text-neutral-500 mt-0.5">{m.membership}</p>
-            </Card>
-          ))}
-        </div>
-      )}
+      <SheetGate tab="All Memberships">
+        {(rows) => {
+          const trialMembers = rows
+            .map((r) => ({ name: findField(r, "name"), membership: findField(r, "membership") }))
+            .filter((m) => TRIAL_MEMBERSHIP_NAMES.includes(m.membership));
+
+          if (trialMembers.length === 0) {
+            return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
+          }
+          return (
+            <div className="space-y-3">
+              {trialMembers.map((m, i) => (
+                <Card key={`${m.name}-${i}`}>
+                  <p className="font-semibold text-neutral-900">{m.name}</p>
+                  <p className="text-sm text-neutral-500 mt-0.5">{m.membership}</p>
+                </Card>
+              ))}
+            </div>
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
@@ -1053,11 +1175,7 @@ function AttendanceWaitingCard({ title, body }: { title: string; body: string })
 export function AtRiskView() {
   return (
     <div className="max-w-5xl">
-      <PageHeader
-        title="At Risk"
-        subtitle="Members who haven't attended in 10+ days."
-        tool="Google Sheets (Attendance) + Campaigns"
-      />
+      <PageHeader title="At Risk" subtitle="Members who haven't attended in 10+ days." tool="Google Sheets (Attendance) + Campaigns" />
       <AttendanceWaitingCard
         title={`Waiting on the "Attendance" tab`}
         body={`Once Attendance (Name, Membership, Last Attended, Classes Last 30 Days) is added to the sheet, this page will list anyone who hasn't attended in 10+ days and let you draft a "we miss you" SMS and email for them.`}
@@ -1075,7 +1193,7 @@ export function UpgradeCandidatesView() {
         tool="Google Sheets (Attendance) + Campaigns"
       />
       <AttendanceWaitingCard
-        title='Waiting on the "Attendance" tab'
+        title={`Waiting on the "Attendance" tab`}
         body="Once Attendance has Classes Last 30 Days, this page will flag Light Boxer 1x / Basic Boxer 2x members over their monthly allowance and let you draft an upgrade-to-Unlimited email."
       />
     </div>
@@ -1087,85 +1205,116 @@ export function UpgradeCandidatesView() {
 // ---------------------------------------------------------------------------
 
 export function WeeklySummaryView() {
-  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const memberships = useSheetTab("All Memberships");
+  const cancelled = useSheetTab("Cancelled (Oct)");
+  const pastDue = useSheetTab("Past Due");
+  const payments = useSheetTab("Payments (Oct 1-25)");
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 
   useEffect(() => {
     fetch("/api/campaigns")
       .then((r) => r.json())
-      .then((d) => setCampaigns(d.campaigns ?? null))
-      .catch(() => setCampaigns(null));
+      .then((d) => setCampaigns(d.campaigns ?? []))
+      .catch(() => setCampaigns([]));
   }, []);
 
-  // Captured once on mount — a static reference point for "within the last 7 days", not re-evaluated on every render.
-  const [now] = useState(() => Date.now());
-  const withinWeek = useMemo(
-    () => (d: Date | null) => d !== null && now - d.getTime() <= 7 * 86_400_000,
-    [now]
-  );
-
-  const newMembers = useMemo(
-    () => memberships.filter((m) => withinWeek(parsePaymentDate(m.signed))).length,
-    [withinWeek]
-  );
-  const cancellationsThisWeek = useMemo(
-    () => cancellations.filter((c) => withinWeek(parsePaymentDate(c.cancelledDate))).length,
-    [withinWeek]
-  );
-  const revenue = useMemo(
-    () =>
-      paymentsList
-        .filter((p) => withinWeek(parsePaymentDate(p.date)))
-        .reduce((sum, p) => sum + parseMoney(p.amountPaid), 0),
-    [withinWeek]
-  );
-  const pastDueTotal = useMemo(() => pastDue.reduce((sum, p) => sum + parseMoney(p.totalOverdue), 0), []);
-  const campaignsSentThisWeek = useMemo(
-    () =>
-      (campaigns ?? []).filter(
-        (c) => (c.status === "Sent" || c.status === "Queued") && withinWeek(parsePaymentDate(c.sentAt))
-      ),
-    [campaigns, withinWeek]
-  );
+  const loading = [memberships.state, cancelled.state, pastDue.state, payments.state].some((s) => s.status === "loading");
+  const notConfigured = [memberships.state, cancelled.state, pastDue.state, payments.state].some((s) => s.status === "not-configured");
+  const firstError = [memberships.state, cancelled.state, pastDue.state, payments.state].find((s) => s.status === "error");
 
   return (
     <div className="max-w-4xl">
       <PageHeader title="Weekly Summary" subtitle="A clean, screenshot-ready recap to send to Alex." />
-      <Card>
-        <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">
-          Week ending {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-        </p>
-        <p className="text-xl font-semibold text-neutral-900 mt-1">Lyfe Boxing — Weekly Summary</p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-5">
-          <Stat label="New members" value={newMembers} />
-          <Stat label="Cancellations" value={cancellationsThisWeek} />
-          <Stat label="Revenue (period)" value={`$${revenue.toLocaleString()}`} />
-          <Stat label="Past due total" value={`$${pastDueTotal.toLocaleString()}`} />
-          <Stat label="Members past due" value={pastDue.length} />
-          <Stat label="Campaigns sent" value={campaignsSentThisWeek.length} />
-        </div>
-
-        <div className="mt-6 pt-5 border-t border-neutral-100">
-          <p className="text-sm font-semibold text-neutral-900 mb-2">Top at-risk members</p>
-          <p className="text-sm text-neutral-400">Add the Attendance tab to see this.</p>
-        </div>
-
-        <div className="mt-6 pt-5 border-t border-neutral-100">
-          <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent this week</p>
-          {campaignsSentThisWeek.length === 0 ? (
-            <p className="text-sm text-neutral-400">None yet.</p>
-          ) : (
-            <ul className="text-sm text-neutral-600 space-y-1">
-              {campaignsSentThisWeek.map((c) => (
-                <li key={c.row}>
-                  {c.campaignName} ({c.channel}) — {c.status}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
+      {loading && <LoadingCard />}
+      {!loading && notConfigured && <SetupNeeded />}
+      {!loading && !notConfigured && firstError && firstError.status === "error" && <SheetErrorCard message={firstError.message} />}
+      {!loading && !notConfigured && !firstError && (
+        <WeeklySummaryCard
+          membershipRows={memberships.state.status === "ok" ? memberships.state.rows : []}
+          cancelledRows={cancelled.state.status === "ok" ? cancelled.state.rows : []}
+          pastDueRows={pastDue.state.status === "ok" ? pastDue.state.rows : []}
+          paymentRows={payments.state.status === "ok" ? payments.state.rows : []}
+          campaigns={campaigns}
+        />
+      )}
     </div>
+  );
+}
+
+function WeeklySummaryCard({
+  membershipRows,
+  cancelledRows,
+  pastDueRows,
+  paymentRows,
+  campaigns,
+}: {
+  membershipRows: SheetRow[];
+  cancelledRows: SheetRow[];
+  pastDueRows: SheetRow[];
+  paymentRows: SheetRow[];
+  campaigns: Campaign[];
+}) {
+  // Captured once on mount — a static reference point for "within the last 7 days".
+  const [now] = useState(() => Date.now());
+  const withinWeek = useMemo(() => (d: Date | null) => d !== null && now - d.getTime() <= 7 * 86_400_000, [now]);
+
+  const newMembers = useMemo(
+    () => membershipRows.filter((m) => withinWeek(parseSlashDate(findField(m, "signed")))).length,
+    [membershipRows, withinWeek]
+  );
+  const cancellationsThisWeek = useMemo(
+    () => cancelledRows.filter((c) => withinWeek(parseSlashDate(findField(c, "cancelled date", "cancelled")))).length,
+    [cancelledRows, withinWeek]
+  );
+  const revenue = useMemo(
+    () =>
+      paymentRows
+        .filter((p) => withinWeek(parseSlashDate(findField(p, "date"))))
+        .reduce((sum, p) => sum + parseMoney(findField(p, "amount paid", "amount")), 0),
+    [paymentRows, withinWeek]
+  );
+  const pastDueTotal = useMemo(() => pastDueRows.reduce((sum, p) => sum + parseMoney(findField(p, "total overdue")), 0), [pastDueRows]);
+  const campaignsSentThisWeek = useMemo(
+    () => campaigns.filter((c) => (c.status === "Sent" || c.status === "Queued") && withinWeek(parseSlashDate(c.sentAt))),
+    [campaigns, withinWeek]
+  );
+
+  return (
+    <Card>
+      <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">
+        Week ending {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+      </p>
+      <p className="text-xl font-semibold text-neutral-900 mt-1">Lyfe Boxing — Weekly Summary</p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-5">
+        <Stat label="New members" value={newMembers} />
+        <Stat label="Cancellations" value={cancellationsThisWeek} />
+        <Stat label="Revenue (period)" value={`$${revenue.toLocaleString()}`} />
+        <Stat label="Past due total" value={`$${pastDueTotal.toLocaleString()}`} />
+        <Stat label="Members past due" value={pastDueRows.length} />
+        <Stat label="Campaigns sent" value={campaignsSentThisWeek.length} />
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-neutral-100">
+        <p className="text-sm font-semibold text-neutral-900 mb-2">Top at-risk members</p>
+        <p className="text-sm text-neutral-400">Add the Attendance tab to see this.</p>
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-neutral-100">
+        <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent this week</p>
+        {campaignsSentThisWeek.length === 0 ? (
+          <p className="text-sm text-neutral-400">None yet.</p>
+        ) : (
+          <ul className="text-sm text-neutral-600 space-y-1">
+            {campaignsSentThisWeek.map((c) => (
+              <li key={c.row}>
+                {c.campaignName} ({c.channel}) — {c.status}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -1262,9 +1411,7 @@ export function CalendarView() {
             >
               {submitting ? "Booking…" : "Request appointment"}
             </button>
-            <p className="text-xs text-neutral-400">
-              Saved with Status &quot;Requested&quot; — your assistant enters it into Spark.
-            </p>
+            <p className="text-xs text-neutral-400">Saved with Status &quot;Requested&quot; — your assistant enters it into Spark.</p>
           </form>
         </Card>
       )}
@@ -1272,8 +1419,8 @@ export function CalendarView() {
       {notConfigured && (
         <Card className="mb-6 border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-800">
-            Booking isn&apos;t wired up yet — add an &quot;Appointments&quot; tab (Date, Time, Type, Member, Coach, Status)
-            to the sheet and make sure the service account has edit access.
+            Booking isn&apos;t wired up yet — add an &quot;Appointments&quot; tab (Date, Time, Type, Member, Coach, Status) to the
+            sheet and make sure the service account has edit access.
           </p>
         </Card>
       )}
