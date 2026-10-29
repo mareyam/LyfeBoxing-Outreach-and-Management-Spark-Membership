@@ -8,7 +8,7 @@ import { Badge, Card, PageHeader, Stat } from "@/components/ui";
 const PAGE_SIZE = 20;
 
 /** Paginates any array client-side; resets to page 1 whenever the input list changes length (e.g. a new search). */
-function usePagination<T>(items: T[], pageSize: number = PAGE_SIZE) {
+export function usePagination<T>(items: T[], pageSize: number = PAGE_SIZE) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -20,7 +20,7 @@ function usePagination<T>(items: T[], pageSize: number = PAGE_SIZE) {
 }
 
 /** Reloads while a draft is Queued so Grok's Sent / Error update shows up. */
-function usePollWhileQueued(active: boolean, reload: () => void) {
+export function usePollWhileQueued(active: boolean, reload: () => void) {
   useEffect(() => {
     if (!active) return;
     const interval = setInterval(reload, 15_000);
@@ -28,7 +28,7 @@ function usePollWhileQueued(active: boolean, reload: () => void) {
   }, [active, reload]);
 }
 
-async function apiError(res: Response, fallback: string): Promise<string> {
+export async function apiError(res: Response, fallback: string): Promise<string> {
   try {
     const data = await res.json();
     return data?.error || fallback;
@@ -37,7 +37,7 @@ async function apiError(res: Response, fallback: string): Promise<string> {
   }
 }
 
-function PaginationControls({
+export function PaginationControls({
   page,
   totalPages,
   onChange,
@@ -80,7 +80,7 @@ function PaginationControls({
  * sheet, and a separate Send action that only marks the row ready —
  * nothing in this app sends email/SMS directly.
  */
-function DraftModal({
+export function DraftModal({
   title,
   subtitle,
   to,

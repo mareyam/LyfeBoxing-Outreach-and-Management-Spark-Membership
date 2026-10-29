@@ -9,6 +9,9 @@ const ALLOWED_TABS = new Set([
   "Past Due",
   "SMS Conversations",
   "Contacts",
+  "Leads",
+  "Digest",
+  "Playbook",
 ]);
 
 export async function GET(req: NextRequest) {
