@@ -19,6 +19,24 @@ function usePagination<T>(items: T[], pageSize: number = PAGE_SIZE) {
   return { pageItems, page: safePage, setPage, totalPages, totalItems: items.length };
 }
 
+/** Reloads while a draft is Queued so Grok's Sent / Error update shows up. */
+function usePollWhileQueued(active: boolean, reload: () => void) {
+  useEffect(() => {
+    if (!active) return;
+    const interval = setInterval(reload, 15_000);
+    return () => clearInterval(interval);
+  }, [active, reload]);
+}
+
+async function apiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = await res.json();
+    return data?.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function PaginationControls({
   page,
   totalPages,
@@ -65,11 +83,14 @@ function PaginationControls({
 function DraftModal({
   title,
   subtitle,
+  to,
   subject,
   body,
   showSubject,
   locked,
   statusLabel,
+  sentAt,
+  notes,
   sendDisabledReason,
   onClose,
   onSave,
@@ -78,15 +99,19 @@ function DraftModal({
 }: {
   title: string;
   subtitle: string;
+  /** Recipient address. Omit for drafts that are not addressed to one person. */
+  to?: string;
   subject: string;
   body: string;
   showSubject: boolean;
   locked: boolean;
   statusLabel?: string;
+  sentAt?: string;
+  notes?: string;
   sendDisabledReason?: string;
   onClose: () => void;
   onSave: (subject: string, body: string) => Promise<void>;
-  onSend: () => Promise<void>;
+  onSend: (subject: string, body: string) => Promise<void>;
   /** Called every 15s while statusLabel === "Queued" so the modal picks up Grok's Sent/Error update. */
   onPoll?: () => Promise<void>;
 }) {
@@ -126,7 +151,7 @@ function DraftModal({
     setSending(true);
     setError(null);
     try {
-      await onSend();
+      await onSend(editSubject, editBody);
       setConfirmingSend(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to send.");
@@ -154,6 +179,13 @@ function DraftModal({
           </div>
         </div>
 
+        {to !== undefined && (
+          <div className="mb-3">
+            <p className="text-xs text-neutral-400 mb-1">To</p>
+            <p className="text-sm text-neutral-800">{to || "No email on file"}</p>
+          </div>
+        )}
+
         {locked ? (
           <>
             {showSubject && (
@@ -164,7 +196,23 @@ function DraftModal({
             )}
             <p className="text-xs text-neutral-400 mb-1">Message</p>
             <p className="text-sm text-neutral-700 whitespace-pre-line leading-relaxed">{body}</p>
-            <p className="text-xs text-neutral-400 mt-4">This draft is locked — it&apos;s already been queued or sent.</p>
+            {sentAt && <p className="text-xs text-neutral-500 mt-4">Sent at {sentAt}</p>}
+            {(statusLabel === "Sent" || statusLabel === "Error") && notes && (
+              <p className="text-sm text-neutral-600 mt-2 whitespace-pre-line">Notes: {notes}</p>
+            )}
+            {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+            <div className="flex items-center justify-between mt-4 gap-3">
+              <p className="text-xs text-neutral-400">This draft is locked — it&apos;s already been queued or sent.</p>
+              {statusLabel === "Queued" && (
+                <button
+                  onClick={handleSend}
+                  disabled={sending}
+                  className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {sending ? "Notifying…" : "Notify again"}
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <div className="space-y-3">
@@ -203,8 +251,8 @@ function DraftModal({
               {!confirmingSend ? (
                 <button
                   onClick={() => setConfirmingSend(true)}
-                  disabled={dirty || !!sendDisabledReason}
-                  title={dirty ? "Save your changes first" : sendDisabledReason}
+                  disabled={!!sendDisabledReason}
+                  title={sendDisabledReason}
                   className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-40"
                 >
                   <Send className="h-3.5 w-3.5" strokeWidth={2} />
@@ -338,23 +386,31 @@ function personalize(template: string, fullName: string): string {
   return template.replaceAll("{First name}", firstNameOf(fullName));
 }
 
-/** Looks up an email for a contact by name, preferring the row's own email field, falling back to the Contacts tab. */
+/**
+ * Email for a person: the row's own address, then the Cancelled tab's Email
+ * column (header "Email", column H), then the Contacts tab.
+ */
 function useContactEmails() {
   const [byName, setByName] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
-    fetch(`/api/lyfe-data?tab=${encodeURIComponent("Contacts")}`)
-      .then((r) => r.json())
-      .then((d: { rows?: SheetRow[] }) => {
-        const map = new Map<string, string>();
-        for (const r of d.rows ?? []) {
-          const name = findField(r, "name").trim().toLowerCase();
-          const email = findField(r, "email").trim();
-          if (name && email) map.set(name, email);
-        }
-        setByName(map);
-      })
-      .catch(() => {});
+    Promise.all([
+      fetch(`/api/lyfe-data?tab=${encodeURIComponent("Contacts")}`).then((r) => r.json()).catch(() => ({})),
+      fetch(`/api/lyfe-data?tab=${encodeURIComponent("Cancelled (Oct)")}`).then((r) => r.json()).catch(() => ({})),
+    ]).then(([contacts, cancelled]: { rows?: SheetRow[] }[]) => {
+      const map = new Map<string, string>();
+      for (const r of contacts.rows ?? []) {
+        const name = findField(r, "name").trim().toLowerCase();
+        const email = findField(r, "email").trim();
+        if (name && email) map.set(name, email);
+      }
+      for (const r of cancelled.rows ?? []) {
+        const name = findField(r, "name").trim().toLowerCase();
+        const email = (r["Email"] ?? findField(r, "email")).trim();
+        if (name && email) map.set(name, email);
+      }
+      setByName(map);
+    });
   }, []);
 
   return useCallback((name: string, rowEmail?: string) => rowEmail?.trim() || byName.get(name.trim().toLowerCase()) || "", [byName]);
@@ -558,10 +614,6 @@ function winbackTag(name: string): string {
   return `winback:${name}`;
 }
 
-function contactAudience(name: string, email: string): string {
-  return `Contact: ${name} <${email}>`;
-}
-
 export function CancelledView() {
   return (
     <div className="max-w-6xl">
@@ -620,7 +672,10 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q))
+    ? mapped.filter((c) => {
+        const email = emailFor(c.name, c.email).toLowerCase();
+        return c.name.toLowerCase().includes(q) || email.includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q);
+      })
     : mapped;
 
   const { pageItems, page, setPage, totalPages } = usePagination(filtered);
@@ -630,6 +685,8 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const openEmail = openContact ? emailFor(openContact.name, openContact.email) : "";
 
   const eligibleNames = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).map((c) => c.name);
+  const winbackQueued = !!campaigns?.some((c) => c.notes.startsWith("winback:") && c.status === "Queued");
+  usePollWhileQueued(winbackQueued, loadCampaigns);
   const missingDraftCount = campaigns
     ? eligibleNames.filter((name) => !campaigns.find((camp) => camp.notes === winbackTag(name))).length
     : eligibleNames.length;
@@ -638,7 +695,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const selectableNames = pageItems
     .filter((c) => {
       const camp = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
-      return camp && camp.status === "Draft" && emailFor(c.name, c.email);
+      return camp && (camp.status === "Draft" || camp.status === "Error") && emailFor(c.name, c.email);
     })
     .map((c) => c.name);
 
@@ -670,7 +727,6 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                 selectedNames={selected}
                 emailFor={emailFor}
                 tagFn={winbackTag}
-                audienceFn={contactAudience}
                 onDone={async () => {
                   setSelected(new Set());
                   await loadCampaigns();
@@ -693,7 +749,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
       </Card>
       <input
         type="text"
-        placeholder="Search by name, plan, or reason category..."
+        placeholder="Search by name, email, plan, or reason category..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
@@ -707,6 +763,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <tr className="text-left text-neutral-400 border-b border-neutral-100">
               <th className="py-2 pr-2 font-medium w-6"></th>
               <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">Email</th>
               <th className="py-2 pr-4 font-medium">Membership</th>
               <th className="py-2 pr-4 font-medium">Signed</th>
               <th className="py-2 pr-4 font-medium">Cancelled</th>
@@ -719,7 +776,12 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             {pageItems.map((c, i) => {
               const canSelect = selectableNames.includes(c.name);
               return (
-                <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <tr
+                  key={`${c.name}-${i}`}
+                  className={`border-b border-neutral-50 last:border-0 align-top ${
+                    campaigns?.find((camp) => camp.notes === winbackTag(c.name))?.status === "Draft" ? "bg-amber-50/60" : ""
+                  }`}
+                >
                   <td className="py-2.5 pr-2">
                     {canSelect && (
                       <input
@@ -731,6 +793,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                     )}
                   </td>
                   <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{emailFor(c.name, c.email) || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
@@ -761,10 +824,13 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <DraftModal
           title={`Win-back email for ${openContact.name}`}
           subtitle="Cancelled / Win-back"
+          to={openEmail}
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject
           statusLabel={openCampaign.status}
+          sentAt={openCampaign.sentAt}
+          notes={openCampaign.notes}
           sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
           locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
           onClose={() => setOpenDraftFor(null)}
@@ -775,17 +841,18 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to save.");
+            if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
             await loadCampaigns();
           }}
-          onSend={async () => {
+          onSend={async (subject, messageBody) => {
             const res = await fetch("/api/campaigns/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, audience: contactAudience(openContact.name, openEmail) }),
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
+            const message = res.ok ? null : await apiError(res, "Failed to send.");
             await loadCampaigns();
+            if (message) throw new Error(message);
           }}
         />
       )}
@@ -799,41 +866,43 @@ function SendSelectedButton({
   selectedNames,
   emailFor,
   tagFn,
-  audienceFn,
   onDone,
 }: {
   campaigns: Campaign[];
   selectedNames: Set<string>;
   emailFor: (name: string, rowEmail?: string) => string;
   tagFn: (name: string) => string;
-  audienceFn: (name: string, email: string) => string;
   onDone: () => Promise<void>;
 }) {
   const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
 
   async function sendSelected() {
     setState("sending");
+    setError(null);
     try {
       const items = [...selectedNames]
         .map((name) => {
           const camp = campaigns.find((c) => c.notes === tagFn(name));
           const email = emailFor(name);
           if (!camp || !email) return null;
-          return { row: camp.row, audience: audienceFn(name, email) };
+          return { row: camp.row, subject: camp.subject, messageBody: camp.messageBody };
         })
-        .filter((x): x is { row: number; audience: string } => x !== null);
+        .filter((x): x is { row: number; subject: string; messageBody: string } => x !== null);
 
-      if (items.length === 0) throw new Error();
+      if (items.length === 0) throw new Error("Nothing to send — check that each person has an email.");
 
       const res = await fetch("/api/campaigns/send-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
       });
-      if (!res.ok) throw new Error();
+      const failed = res.ok ? null : await apiError(res, "Something went wrong — try again.");
       await onDone();
+      if (failed) throw new Error(failed);
       setState("idle");
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong — try again.");
       setState("error");
     }
   }
@@ -848,7 +917,7 @@ function SendSelectedButton({
         <Send className="h-3.5 w-3.5" strokeWidth={2} />
         {state === "sending" ? "Sending…" : `Send selected (${selectedNames.size})`}
       </button>
-      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+      {state === "error" && error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -998,6 +1067,8 @@ type PastDueMember = {
   emailSubject: string;
   emailBody: string;
   emailStatus: string;
+  sentAt: string;
+  notes: string;
 };
 
 const PAST_DUE_EMAIL_TEMPLATE = {
@@ -1017,6 +1088,8 @@ function rowToPastDueMember(r: SheetRow): PastDueMember {
     emailSubject: findField(r, "email subject"),
     emailBody: findField(r, "email body"),
     emailStatus: findField(r, "email status"),
+    sentAt: findField(r, "sent at"),
+    notes: findField(r, "notes"),
   };
 }
 
@@ -1033,6 +1106,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [members, setMembers] = useState<PastDueMember[]>(() => rows.map(rowToPastDueMember));
+  const emailFor = useContactEmails();
 
   const refetch = useCallback(async () => {
     try {
@@ -1045,15 +1119,19 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   }, []);
 
   const totalOwed = members.reduce((sum, m) => sum + parseMoney(m.totalOverdue), 0);
+  usePollWhileQueued(members.some((m) => m.emailStatus === "Queued"), refetch);
   const { pageItems, page, setPage, totalPages } = usePagination(members);
   const open = openRow !== null ? members.find((m) => m.row === openRow) : undefined;
+  const openEmail = open ? emailFor(open.name, open.email) : "";
 
   function patchMember(row: number, changes: Partial<PastDueMember>) {
     setMembers((prev) => prev.map((m) => (m.row === row ? { ...m, ...changes } : m)));
   }
 
   const missingDraftCount = members.filter((m) => !m.emailBody).length;
-  const selectableRows = pageItems.filter((m) => m.emailStatus === "Draft" && m.email).map((m) => m.row);
+  const selectableRows = pageItems
+    .filter((m) => (m.emailStatus === "Draft" || m.emailStatus === "Error" || !m.emailStatus) && m.emailBody && emailFor(m.name, m.email))
+    .map((m) => m.row);
 
   function toggleSelected(row: number) {
     setSelected((prev) => {
@@ -1099,6 +1177,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             <PastDueSendSelectedButton
               members={members}
               selectedRows={selected}
+              emailFor={emailFor}
               onDone={async () => {
                 setSelected(new Set());
                 await refetch();
@@ -1115,7 +1194,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         <>
           <div className="space-y-3">
             {pageItems.map((m) => (
-              <Card key={m.row}>
+              <Card key={m.row} className={m.emailBody && (!m.emailStatus || m.emailStatus === "Draft") ? "bg-amber-50/40" : ""}>
                 <div className="flex items-center gap-3">
                   {selectableRows.includes(m.row) && (
                     <input
@@ -1128,12 +1207,18 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
                   <div className="flex-1 flex items-center justify-between gap-4">
                     <div>
                       <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
+                      <p className="text-sm text-neutral-600 mt-0.5">{emailFor(m.name, m.email) || "No email"}</p>
                       <p className="text-sm text-neutral-500 mt-0.5">
                         {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
                         {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
                       </p>
                     </div>
-                    <PastDueDraftCell member={m} onGenerated={(c) => patchMember(m.row, c)} onOpen={() => setOpenRow(m.row)} />
+                    <PastDueDraftCell
+                      member={m}
+                      hasEmail={!!emailFor(m.name, m.email)}
+                      onGenerated={(c) => patchMember(m.row, c)}
+                      onOpen={() => setOpenRow(m.row)}
+                    />
                   </div>
                 </div>
               </Card>
@@ -1147,11 +1232,14 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         <DraftModal
           title={`Collections email for ${open.name}`}
           subtitle="Past Due"
+          to={openEmail}
           subject={open.emailSubject}
           body={open.emailBody}
           showSubject
           statusLabel={open.emailStatus || "Draft"}
-          sendDisabledReason={open.email ? undefined : "This contact has no email on file — can't send."}
+          sentAt={open.sentAt}
+          notes={open.notes}
+          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
           locked={open.emailStatus === "Queued" || open.emailStatus === "Sent"}
           onClose={() => setOpenRow(null)}
           onPoll={refetch}
@@ -1161,17 +1249,21 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ row: open.row, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to save.");
+            if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
             patchMember(open.row, { emailSubject: subject, emailBody: messageBody, emailStatus: "Draft" });
           }}
-          onSend={async () => {
+          onSend={async (subject, messageBody) => {
             const res = await fetch("/api/past-due/draft", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: open.row, email: open.email }),
+              body: JSON.stringify({ row: open.row, email: openEmail, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
-            patchMember(open.row, { emailStatus: "Queued" });
+            const message = res.ok ? null : await apiError(res, "Failed to send.");
+            if (res.ok || res.status === 502 || res.status === 503) {
+              patchMember(open.row, { emailSubject: subject, emailBody: messageBody, emailStatus: "Queued" });
+            }
+            await refetch();
+            if (message) throw new Error(message);
           }}
         />
       )}
@@ -1182,33 +1274,39 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
 function PastDueSendSelectedButton({
   members,
   selectedRows,
+  emailFor,
   onDone,
 }: {
   members: PastDueMember[];
   selectedRows: Set<number>;
+  emailFor: (name: string, rowEmail?: string) => string;
   onDone: () => Promise<void>;
 }) {
   const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
 
   async function sendSelected() {
     setState("sending");
+    setError(null);
     try {
       const items = [...selectedRows]
         .map((row) => members.find((m) => m.row === row))
-        .filter((m): m is PastDueMember => !!m && !!m.email)
-        .map((m) => ({ row: m.row, email: m.email }));
+        .filter((m): m is PastDueMember => !!m && !!emailFor(m.name, m.email))
+        .map((m) => ({ row: m.row, email: emailFor(m.name, m.email), subject: m.emailSubject, messageBody: m.emailBody }));
 
-      if (items.length === 0) throw new Error();
+      if (items.length === 0) throw new Error("Nothing to send — check that each person has an email.");
 
       const res = await fetch("/api/past-due/send-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
       });
-      if (!res.ok) throw new Error();
+      const failed = res.ok ? null : await apiError(res, "Something went wrong — try again.");
       await onDone();
+      if (failed) throw new Error(failed);
       setState("idle");
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong — try again.");
       setState("error");
     }
   }
@@ -1223,7 +1321,7 @@ function PastDueSendSelectedButton({
         <Send className="h-3.5 w-3.5" strokeWidth={2} />
         {state === "sending" ? "Sending…" : `Send selected (${selectedRows.size})`}
       </button>
-      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+      {state === "error" && error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -1260,10 +1358,12 @@ function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number;
 
 function PastDueDraftCell({
   member,
+  hasEmail,
   onGenerated,
   onOpen,
 }: {
   member: PastDueMember;
+  hasEmail: boolean;
   onGenerated: (changes: Partial<PastDueMember>) => void;
   onOpen: () => void;
 }) {
@@ -1312,7 +1412,7 @@ function PastDueDraftCell({
         {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
         {isNew ? "New draft" : member.emailStatus}
       </button>
-      {isNew && !member.email && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
+      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
     </div>
   );
 }
@@ -1558,19 +1658,6 @@ type Campaign = {
   notes: string;
 };
 
-function nextSendWindowPKT(): string {
-  const now = new Date();
-  const pktNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-  const candidates = [3, 12, 15, 24].map((h) => {
-    const d = new Date(pktNow);
-    d.setHours(h % 24, 0, 0, 0);
-    if (h === 24) d.setDate(d.getDate() + 1);
-    return d;
-  });
-  const next = candidates.find((d) => d.getTime() > pktNow.getTime()) ?? candidates[0];
-  return next.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) + " PKT";
-}
-
 const audienceOptions = [
   "All active members",
   "Past due members",
@@ -1582,13 +1669,22 @@ const audienceOptions = [
   "Ignite Pro | Adult Boxing | 3-Class Trial for $19.95",
 ];
 
+function personalCampaignName(notes: string): string {
+  if (notes.startsWith("winback:")) return notes.slice("winback:".length);
+  if (notes.startsWith("trial:") && !notes.startsWith("trial-sms:")) return notes.slice("trial:".length);
+  return "";
+}
+
 export function CampaignsView() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [sendingRow, setSendingRow] = useState<number | null>(null);
-  const nextWindow = useMemo(() => nextSendWindowPKT(), []);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [openRow, setOpenRow] = useState<number | null>(null);
+  const emailFor = useContactEmails();
 
   const load = useCallback(async () => {
     try {
@@ -1613,38 +1709,91 @@ export function CampaignsView() {
   }, [load]);
 
   const { pageItems: pagedCampaigns, page, setPage, totalPages } = usePagination(campaigns ?? []);
+  usePollWhileQueued(!!campaigns?.some((c) => c.status === "Queued"), load);
 
-  async function handleSend(row: number) {
-    setSendingRow(row);
+  function emailForCampaign(c: Campaign): string {
+    const name = personalCampaignName(c.notes);
+    if (!name) return "n/a";
+    return emailFor(name);
+  }
+
+  function canQueue(c: Campaign): boolean {
+    if (c.status !== "Draft" && c.status !== "Error") return false;
+    const name = personalCampaignName(c.notes);
+    if (!name) return true;
+    return !!emailFor(name);
+  }
+
+  async function handleSend(c: Campaign) {
+    setSendingRow(c.row);
+    setSendError(null);
     try {
       const res = await fetch("/api/campaigns/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ row }),
+        body: JSON.stringify({ row: c.row, subject: c.subject, messageBody: c.messageBody }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        alert(data.error ?? "Failed to queue campaign.");
-      } else {
-        await load();
+        setSendError(await apiError(res, "Failed to queue campaign."));
       }
+      await load();
     } finally {
       setSendingRow(null);
     }
   }
 
+  function toggleSelected(row: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(row)) next.delete(row);
+      else next.add(row);
+      return next;
+    });
+  }
+
+  const openCampaign = campaigns?.find((c) => c.row === openRow);
+
   return (
     <div className="max-w-6xl">
       <PageHeader
         title="Campaigns"
-        subtitle="Email and SMS campaigns. Sending happens through Spark on the next 3 PM / 12 AM PKT run — this page only queues them."
-        tool="Google Sheets (Campaigns) + Spark"
+        subtitle="Edit a draft, then send it. Send saves the message, marks the row Queued, and tells Grok to deliver it."
+        tool="Google Sheets (Campaigns)"
       />
 
-      <div className="flex items-center justify-between mb-6">
-        <p className="text-sm text-neutral-500">
-          Next send window: <span className="text-neutral-900 font-medium">{nextWindow}</span>
-        </p>
+      <div className="flex items-center justify-end gap-2 mb-6">
+        {selected.size > 0 && (
+          <button
+            onClick={async () => {
+              const items = (campaigns ?? [])
+                .filter((c) => selected.has(c.row) && canQueue(c))
+                .map((c) => ({ row: c.row, subject: c.subject, messageBody: c.messageBody }));
+              if (items.length === 0) {
+                setSendError("Nothing to send — win-back and trial drafts need an email on file.");
+                return;
+              }
+              setSendingRow(-1);
+              setSendError(null);
+              try {
+                const res = await fetch("/api/campaigns/send-bulk", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ items }),
+                });
+                if (!res.ok) setSendError(await apiError(res, "Failed to queue the selected campaigns."));
+                setSelected(new Set());
+                await load();
+              } finally {
+                setSendingRow(null);
+              }
+            }}
+            disabled={sendingRow !== null}
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          >
+            <Send className="h-3.5 w-3.5" strokeWidth={2} />
+            {sendingRow === -1 ? "Sending…" : `Send selected (${selected.size})`}
+          </button>
+        )}
         <button
           onClick={() => setShowForm((s) => !s)}
           className="rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800"
@@ -1675,17 +1824,33 @@ export function CampaignsView() {
           <p className="text-sm text-red-700">{error}</p>
         </Card>
       )}
+      {sendError && (
+        <Card className="mb-6 border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{sendError}</p>
+        </Card>
+      )}
 
       {campaigns && campaigns.length === 0 && !error && <p className="text-sm text-neutral-400">No campaigns yet. Create one above.</p>}
 
       <div className="space-y-3">
         {pagedCampaigns.map((c) => {
-          const locked = c.status === "Sending" || c.status === "Sent";
-          const canSend = c.status === "Draft" || c.status === "Error";
+          const locked = c.status === "Sending" || c.status === "Sent" || c.status === "Queued";
+          const queueable = canQueue(c);
+          const personalName = personalCampaignName(c.notes);
+          const missingEmail = !!personalName && !emailForCampaign(c);
+          const isNew = c.status === "Draft";
           return (
-            <Card key={c.row}>
+            <Card key={c.row} className={isNew ? "bg-amber-50/40" : ""}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
+                  {queueable && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(c.row)}
+                      onChange={() => toggleSelected(c.row)}
+                      className="mt-3 rounded border-neutral-300"
+                    />
+                  )}
                   <div className="h-9 w-9 rounded-full bg-neutral-50 border border-neutral-200 flex items-center justify-center shrink-0">
                     {c.channel === "SMS" ? (
                       <MessageSquare className="h-4 w-4 text-neutral-500" strokeWidth={1.75} />
@@ -1694,25 +1859,47 @@ export function CampaignsView() {
                     )}
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-neutral-900">{c.campaignName}</p>
+                    <p className="text-base font-semibold text-neutral-900">
+                      {isNew && <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-900 mr-2 align-middle" />}
+                      {c.campaignName}
+                    </p>
                     <p className="text-sm text-neutral-500 mt-0.5">
-                      {c.channel} · {c.audience}
+                      {c.channel} · {c.audience || "No audience yet"}
                       {c.recipients && ` · ${c.recipients} recipients`}
                     </p>
                     {c.channel === "Email" && c.subject && <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>}
                     <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">{c.messageBody}</p>
                     {c.sentAt && <p className="text-xs text-neutral-400 mt-2">Sent at {c.sentAt}</p>}
+                    {(c.status === "Sent" || c.status === "Error") && c.notes && (
+                      <p className="text-xs text-neutral-500 mt-1">Notes: {c.notes}</p>
+                    )}
+                    {missingEmail && <p className="text-xs text-amber-700 mt-1">No email on file — Send is disabled.</p>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <Badge>{c.status}</Badge>
-                  {canSend && (
+                  <Badge>{c.status || "Draft"}</Badge>
+                  <button
+                    onClick={() => setOpenRow(c.row)}
+                    className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    {isNew ? "New draft" : "Open"}
+                  </button>
+                  {queueable && (
                     <button
-                      onClick={() => handleSend(c.row)}
+                      onClick={() => handleSend(c)}
                       disabled={sendingRow === c.row}
                       className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                     >
                       {sendingRow === c.row ? "Queuing…" : "Send"}
+                    </button>
+                  )}
+                  {c.status === "Queued" && (
+                    <button
+                      onClick={() => handleSend(c)}
+                      disabled={sendingRow === c.row}
+                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                    >
+                      {sendingRow === c.row ? "Notifying…" : "Notify again"}
                     </button>
                   )}
                   {locked && <p className="text-xs text-neutral-400">Locked</p>}
@@ -1723,6 +1910,47 @@ export function CampaignsView() {
         })}
       </div>
       <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
+
+      {openCampaign && (
+        <DraftModal
+          title={openCampaign.campaignName}
+          subtitle="Campaigns"
+          to={personalCampaignName(openCampaign.notes) ? emailForCampaign(openCampaign) : undefined}
+          subject={openCampaign.subject}
+          body={openCampaign.messageBody}
+          showSubject={openCampaign.channel !== "SMS"}
+          statusLabel={openCampaign.status || "Draft"}
+          sentAt={openCampaign.sentAt}
+          notes={openCampaign.notes}
+          sendDisabledReason={
+            personalCampaignName(openCampaign.notes) && !emailForCampaign(openCampaign)
+              ? "This contact has no email on file — can't send."
+              : undefined
+          }
+          locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
+          onClose={() => setOpenRow(null)}
+          onPoll={load}
+          onSave={async (subject, messageBody) => {
+            const res = await fetch("/api/campaigns", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+            });
+            if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
+            await load();
+          }}
+          onSend={async (subject, messageBody) => {
+            const res = await fetch("/api/campaigns/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+            });
+            const message = res.ok ? null : await apiError(res, "Failed to send.");
+            await load();
+            if (message) throw new Error(message);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1971,6 +2199,8 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
   const missingDraftCount = campaigns
     ? trialMembers.filter((m) => !campaigns.find((c) => c.notes === trialTag(m.name))).length
     : trialMembers.length;
+  const trialQueued = !!campaigns?.some((c) => c.notes.startsWith("trial:") && !c.notes.startsWith("trial-sms:") && c.status === "Queued");
+  usePollWhileQueued(trialQueued, loadCampaigns);
 
   const openMember = trialMembers.find((m) => m.name === openDraftFor);
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === trialTag(openDraftFor)) : undefined;
@@ -1979,7 +2209,7 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
   const selectableNames = trialMembers
     .filter((m) => {
       const camp = campaigns?.find((c) => c.notes === trialTag(m.name));
-      return camp && camp.status === "Draft" && emailFor(m.name, m.email);
+      return camp && (camp.status === "Draft" || camp.status === "Error") && emailFor(m.name, m.email);
     })
     .map((m) => m.name);
 
@@ -2015,7 +2245,6 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
                 selectedNames={selected}
                 emailFor={emailFor}
                 tagFn={trialTag}
-                audienceFn={contactAudience}
                 onDone={async () => {
                   setSelected(new Set());
                   await loadCampaigns();
@@ -2040,8 +2269,12 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
           <tbody>
             {trialMembers.map((m, i) => {
               const canSelect = selectableNames.includes(m.name);
+              const draftStatus = campaigns?.find((c) => c.notes === trialTag(m.name))?.status;
               return (
-                <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <tr
+                  key={`${m.name}-${i}`}
+                  className={`border-b border-neutral-50 last:border-0 align-top ${draftStatus === "Draft" ? "bg-amber-50/60" : ""}`}
+                >
                   <td className="py-2.5 pr-2">
                     {canSelect && (
                       <input
@@ -2074,10 +2307,13 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
         <DraftModal
           title={`Upgrade email for ${openMember.name}`}
           subtitle="Trial Conversion"
+          to={openEmail}
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject
           statusLabel={openCampaign.status}
+          sentAt={openCampaign.sentAt}
+          notes={openCampaign.notes}
           sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
           locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
           onClose={() => setOpenDraftFor(null)}
@@ -2088,17 +2324,18 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to save.");
+            if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
             await loadCampaigns();
           }}
-          onSend={async () => {
+          onSend={async (subject, messageBody) => {
             const res = await fetch("/api/campaigns/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, audience: contactAudience(openMember.name, openEmail) }),
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
             });
-            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
+            const message = res.ok ? null : await apiError(res, "Failed to send.");
             await loadCampaigns();
+            if (message) throw new Error(message);
           }}
         />
       )}
