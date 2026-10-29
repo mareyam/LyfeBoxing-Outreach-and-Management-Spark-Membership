@@ -83,6 +83,7 @@ function PaginationControls({
 function DraftModal({
   title,
   subtitle,
+  to,
   subject,
   body,
   showSubject,
@@ -98,6 +99,8 @@ function DraftModal({
 }: {
   title: string;
   subtitle: string;
+  /** Recipient address. Omit for drafts that are not addressed to one person. */
+  to?: string;
   subject: string;
   body: string;
   showSubject: boolean;
@@ -175,6 +178,13 @@ function DraftModal({
             </button>
           </div>
         </div>
+
+        {to !== undefined && (
+          <div className="mb-3">
+            <p className="text-xs text-neutral-400 mb-1">To</p>
+            <p className="text-sm text-neutral-800">{to || "No email on file"}</p>
+          </div>
+        )}
 
         {locked ? (
           <>
@@ -662,7 +672,10 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q))
+    ? mapped.filter((c) => {
+        const email = emailFor(c.name, c.email).toLowerCase();
+        return c.name.toLowerCase().includes(q) || email.includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q);
+      })
     : mapped;
 
   const { pageItems, page, setPage, totalPages } = usePagination(filtered);
@@ -736,7 +749,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
       </Card>
       <input
         type="text"
-        placeholder="Search by name, plan, or reason category..."
+        placeholder="Search by name, email, plan, or reason category..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
@@ -750,6 +763,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <tr className="text-left text-neutral-400 border-b border-neutral-100">
               <th className="py-2 pr-2 font-medium w-6"></th>
               <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">Email</th>
               <th className="py-2 pr-4 font-medium">Membership</th>
               <th className="py-2 pr-4 font-medium">Signed</th>
               <th className="py-2 pr-4 font-medium">Cancelled</th>
@@ -779,6 +793,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                     )}
                   </td>
                   <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{emailFor(c.name, c.email) || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
@@ -809,6 +824,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <DraftModal
           title={`Win-back email for ${openContact.name}`}
           subtitle="Cancelled / Win-back"
+          to={openEmail}
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject
@@ -1090,6 +1106,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [members, setMembers] = useState<PastDueMember[]>(() => rows.map(rowToPastDueMember));
+  const emailFor = useContactEmails();
 
   const refetch = useCallback(async () => {
     try {
@@ -1105,13 +1122,16 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   usePollWhileQueued(members.some((m) => m.emailStatus === "Queued"), refetch);
   const { pageItems, page, setPage, totalPages } = usePagination(members);
   const open = openRow !== null ? members.find((m) => m.row === openRow) : undefined;
+  const openEmail = open ? emailFor(open.name, open.email) : "";
 
   function patchMember(row: number, changes: Partial<PastDueMember>) {
     setMembers((prev) => prev.map((m) => (m.row === row ? { ...m, ...changes } : m)));
   }
 
   const missingDraftCount = members.filter((m) => !m.emailBody).length;
-  const selectableRows = pageItems.filter((m) => (m.emailStatus === "Draft" || m.emailStatus === "Error" || !m.emailStatus) && m.emailBody && m.email).map((m) => m.row);
+  const selectableRows = pageItems
+    .filter((m) => (m.emailStatus === "Draft" || m.emailStatus === "Error" || !m.emailStatus) && m.emailBody && emailFor(m.name, m.email))
+    .map((m) => m.row);
 
   function toggleSelected(row: number) {
     setSelected((prev) => {
@@ -1157,6 +1177,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             <PastDueSendSelectedButton
               members={members}
               selectedRows={selected}
+              emailFor={emailFor}
               onDone={async () => {
                 setSelected(new Set());
                 await refetch();
@@ -1186,12 +1207,18 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
                   <div className="flex-1 flex items-center justify-between gap-4">
                     <div>
                       <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
+                      <p className="text-sm text-neutral-600 mt-0.5">{emailFor(m.name, m.email) || "No email"}</p>
                       <p className="text-sm text-neutral-500 mt-0.5">
                         {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
                         {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
                       </p>
                     </div>
-                    <PastDueDraftCell member={m} onGenerated={(c) => patchMember(m.row, c)} onOpen={() => setOpenRow(m.row)} />
+                    <PastDueDraftCell
+                      member={m}
+                      hasEmail={!!emailFor(m.name, m.email)}
+                      onGenerated={(c) => patchMember(m.row, c)}
+                      onOpen={() => setOpenRow(m.row)}
+                    />
                   </div>
                 </div>
               </Card>
@@ -1205,13 +1232,14 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         <DraftModal
           title={`Collections email for ${open.name}`}
           subtitle="Past Due"
+          to={openEmail}
           subject={open.emailSubject}
           body={open.emailBody}
           showSubject
           statusLabel={open.emailStatus || "Draft"}
           sentAt={open.sentAt}
           notes={open.notes}
-          sendDisabledReason={open.email ? undefined : "This contact has no email on file — can't send."}
+          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
           locked={open.emailStatus === "Queued" || open.emailStatus === "Sent"}
           onClose={() => setOpenRow(null)}
           onPoll={refetch}
@@ -1228,7 +1256,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             const res = await fetch("/api/past-due/draft", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: open.row, email: open.email, subject, messageBody }),
+              body: JSON.stringify({ row: open.row, email: openEmail, subject, messageBody }),
             });
             const message = res.ok ? null : await apiError(res, "Failed to send.");
             if (res.ok || res.status === 502 || res.status === 503) {
@@ -1246,10 +1274,12 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
 function PastDueSendSelectedButton({
   members,
   selectedRows,
+  emailFor,
   onDone,
 }: {
   members: PastDueMember[];
   selectedRows: Set<number>;
+  emailFor: (name: string, rowEmail?: string) => string;
   onDone: () => Promise<void>;
 }) {
   const [state, setState] = useState<"idle" | "sending" | "error">("idle");
@@ -1261,8 +1291,8 @@ function PastDueSendSelectedButton({
     try {
       const items = [...selectedRows]
         .map((row) => members.find((m) => m.row === row))
-        .filter((m): m is PastDueMember => !!m && !!m.email)
-        .map((m) => ({ row: m.row, email: m.email, subject: m.emailSubject, messageBody: m.emailBody }));
+        .filter((m): m is PastDueMember => !!m && !!emailFor(m.name, m.email))
+        .map((m) => ({ row: m.row, email: emailFor(m.name, m.email), subject: m.emailSubject, messageBody: m.emailBody }));
 
       if (items.length === 0) throw new Error("Nothing to send — check that each person has an email.");
 
@@ -1328,10 +1358,12 @@ function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number;
 
 function PastDueDraftCell({
   member,
+  hasEmail,
   onGenerated,
   onOpen,
 }: {
   member: PastDueMember;
+  hasEmail: boolean;
   onGenerated: (changes: Partial<PastDueMember>) => void;
   onOpen: () => void;
 }) {
@@ -1380,7 +1412,7 @@ function PastDueDraftCell({
         {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
         {isNew ? "New draft" : member.emailStatus}
       </button>
-      {isNew && !member.email && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
+      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
     </div>
   );
 }
@@ -1883,6 +1915,7 @@ export function CampaignsView() {
         <DraftModal
           title={openCampaign.campaignName}
           subtitle="Campaigns"
+          to={personalCampaignName(openCampaign.notes) ? emailForCampaign(openCampaign) : undefined}
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject={openCampaign.channel !== "SMS"}
@@ -2222,6 +2255,7 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
         <DraftModal
           title={`Upgrade email for ${openMember.name}`}
           subtitle="Trial Conversion"
+          to={openEmail}
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject
