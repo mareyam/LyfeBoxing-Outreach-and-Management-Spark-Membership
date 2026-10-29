@@ -1,5 +1,21 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+The Lyfe Boxing dashboard lives at `/lyfe-boxing` and reads the Spark Memberships Google Sheet. Send does not deliver email itself: it saves the draft, sets the row to `Queued`, then POSTs to the Grok webhook.
+
+## Environment variables
+
+Set these on the Vercel project (Production) and in `.env.local` for local dev. `.env.local` is gitignored — do not commit secrets. Names and placeholders are listed in `.env.example`.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `GROK_WEBHOOK_URL` | Yes, for Send | URL the server POSTs when a row is queued. Body: `{ tab, rows, kind, site: "lyfe-boxing", queuedAt }`. |
+| `GROK_WEBHOOK_AUTH` | Yes, for Send | Full `Authorization` header value sent with that POST (for example `Bearer <token>`). |
+| `SITE_PASSWORD` | No | When set, every page and `/api` route asks for this password on `/login` and then stores an HttpOnly cookie. The check lives in `src/proxy.ts` (Next.js 16's middleware). When unset, the site stays open. |
+
+Google Sheets (`GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SHEETS_CLIENT_EMAIL`, `GOOGLE_SHEETS_PRIVATE_KEY`) are also required for live data. See `.env.example`.
+
+If `GROK_WEBHOOK_URL` or `GROK_WEBHOOK_AUTH` is missing, Send still writes `Queued` and the UI shows **Webhook not configured**.
+
 ## Getting Started
 
 First, run the development server:

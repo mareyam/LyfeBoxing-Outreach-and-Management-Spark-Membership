@@ -1,9 +1,9 @@
 import "server-only";
 
-export class GrokNotConfiguredError extends Error {
+export class WebhookNotConfiguredError extends Error {
   constructor() {
-    super("Grok webhook isn't configured. Set GROK_WEBHOOK_URL and GROK_WEBHOOK_AUTH.");
-    this.name = "GrokNotConfiguredError";
+    super("Webhook not configured");
+    this.name = "WebhookNotConfiguredError";
   }
 }
 
@@ -14,41 +14,83 @@ export function kindFromCampaignNotes(notes: string): "winback" | "trial" | "cam
   return "campaign";
 }
 
-type NotifyGrokPayload =
-  | { tab: string; row: number; kind: string }
-  | { tab: string; rows: number[]; kind: string };
+export type NotifyGrokInput = {
+  tab: string;
+  rows: number[];
+  kind: string;
+};
+
+function readEnv(name: string): string | undefined {
+  // Bracket access so the bundler cannot inline a build-time value (or
+  // `undefined` from a build that ran before the var existed).
+  const value = process.env[name];
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status >= 500 && status <= 599;
+}
 
 /**
- * Tells Grok a row (or rows) is ready to send. Grok is the only thing that
- * ever actually sends email/SMS — this just flips the sheet row to
- * "Queued" (done by the caller beforehand) and pings Grok to go look.
- * Retries once after 5s on a network/HTTP error; if that also fails, the
- * row stays "Queued" and the caller surfaces the error to the UI.
+ * Tells Grok which sheet rows were just set to Status "Queued".
+ * Grok is the only thing that sends email/SMS. This POST is awaited
+ * (it is not fired off and abandoned when the function returns), retried
+ * once on a network error or a 5xx, and logs only the HTTP status.
  */
-export async function notifyGrok(payload: NotifyGrokPayload): Promise<void> {
-  const url = process.env.GROK_WEBHOOK_URL;
-  const auth = process.env.GROK_WEBHOOK_AUTH;
-  if (!url || !auth) throw new GrokNotConfiguredError();
-
-  const body = JSON.stringify({ ...payload, site: "lyfe-boxing", queuedAt: new Date().toISOString() });
-
-  async function attempt(): Promise<void> {
-    const res = await fetch(url as string, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: auth as string },
-      body,
-    });
-    if (!res.ok) throw new Error(`Grok webhook responded ${res.status}`);
+export async function notifyGrok({ tab, rows, kind }: NotifyGrokInput): Promise<void> {
+  const url = readEnv("GROK_WEBHOOK_URL");
+  const auth = readEnv("GROK_WEBHOOK_AUTH");
+  if (!url || !auth) {
+    console.error("[notifyGrok] Webhook not configured");
+    throw new WebhookNotConfiguredError();
   }
 
+  const body = JSON.stringify({
+    tab,
+    rows,
+    kind,
+    site: "lyfe-boxing",
+    queuedAt: new Date().toISOString(),
+  });
+
+  async function post(): Promise<Response> {
+    return fetch(url as string, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: auth as string,
+      },
+      body,
+      cache: "no-store",
+    });
+  }
+
+  let res: Response;
   try {
-    await attempt();
+    res = await post();
   } catch {
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    console.error(`[notifyGrok] network error tab=${tab} kind=${kind} rows=${rows.length}, retrying once`);
     try {
-      await attempt();
+      res = await post();
     } catch {
-      throw new Error("Couldn't reach Grok — the row is still Queued, try sending again in a bit.");
+      console.error(`[notifyGrok] network error on retry tab=${tab} kind=${kind} rows=${rows.length}`);
+      throw new Error("Couldn't reach the webhook.");
     }
+  }
+
+  if (isRetryableStatus(res.status)) {
+    console.error(`[notifyGrok] status ${res.status} tab=${tab} kind=${kind} rows=${rows.length}, retrying once`);
+    try {
+      res = await post();
+    } catch {
+      console.error(`[notifyGrok] network error on retry tab=${tab} kind=${kind} rows=${rows.length}`);
+      throw new Error("Couldn't reach the webhook.");
+    }
+  }
+
+  console.log(`[notifyGrok] status ${res.status} tab=${tab} kind=${kind} rows=${rows.length}`);
+  if (!res.ok) {
+    throw new Error(`Webhook responded ${res.status}`);
   }
 }

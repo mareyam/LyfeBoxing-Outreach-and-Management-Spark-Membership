@@ -99,53 +99,89 @@ export async function appendCampaign(input: {
   });
 }
 
-/**
- * Queues a campaign row for Grok to send: optionally re-targets the
- * Audience column (used for per-contact win-back/trial drafts so Grok
- * sends to exactly one person, never a whole membership), sets
- * Send=TRUE / Status=Queued, and returns the row's Notes so the caller
- * can derive what kind of send this is (campaign vs winback vs trial).
- */
-export async function queueCampaignSend(row: number, audience?: string): Promise<{ notes: string }> {
-  const sheets = getSheetsClient();
+export type CampaignDraft = {
+  campaignName: string;
+  audience: string;
+  subject: string;
+  messageBody: string;
+  status: string;
+  notes: string;
+};
 
+/** Reads one Campaigns row (columns A–J). Does not change column order. */
+export async function getCampaignDraft(row: number): Promise<CampaignDraft> {
+  const sheets = getSheetsClient();
   const current = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `Campaigns!F${row}:J${row}`,
+    range: `Campaigns!A${row}:J${row}`,
   });
-  const [sendVal, statusVal, , , notesVal] = current.data.values?.[0] ?? [];
-  if ((sendVal ?? "").toString().toUpperCase() === "TRUE" || !["Draft", "Error"].includes(statusVal ?? "Draft")) {
-    throw new Error(`Row ${row} can't be queued from status "${statusVal}".`);
-  }
+  const r = current.data.values?.[0] ?? [];
+  return {
+    campaignName: (r[0] ?? "").toString(),
+    audience: (r[2] ?? "").toString(),
+    subject: (r[3] ?? "").toString(),
+    messageBody: (r[4] ?? "").toString(),
+    status: (r[6] ?? "").toString() || "Draft",
+    notes: (r[9] ?? "").toString(),
+  };
+}
 
-  const data = [{ range: `Campaigns!F${row}:G${row}`, values: [["TRUE", "Queued"]] }];
+/**
+ * Marks a campaign ready for Grok: Send (col F) TRUE, Status (col G) Queued.
+ * When `audience` is set, also writes Audience (col C) so a win-back or trial
+ * draft targets one person. Safe to call again on a row that is already Queued.
+ */
+export async function markCampaignQueued(row: number, audience?: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const data: { range: string; values: string[][] }[] = [
+    { range: `Campaigns!F${row}:G${row}`, values: [["TRUE", "Queued"]] },
+  ];
   if (audience !== undefined) {
     data.push({ range: `Campaigns!C${row}`, values: [[audience]] });
   }
-
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
     requestBody: { valueInputOption: "RAW", data },
   });
-
-  return { notes: (notesVal ?? "").toString() };
 }
 
-export type BulkQueueResult = { row: number; notes: string; ok: boolean; error?: string };
+function cell(row: Record<string, string>, header: string): string {
+  const key = Object.keys(row).find((k) => k.toLowerCase() === header.toLowerCase());
+  return key ? (row[key] ?? "").trim() : "";
+}
 
-export async function queueCampaignSendBulk(
-  items: { row: number; audience?: string }[]
-): Promise<BulkQueueResult[]> {
-  const results: BulkQueueResult[] = [];
-  for (const item of items) {
-    try {
-      const { notes } = await queueCampaignSend(item.row, item.audience);
-      results.push({ row: item.row, notes, ok: true });
-    } catch (err) {
-      results.push({ row: item.row, notes: "", ok: false, error: err instanceof Error ? err.message : "Unknown error" });
+/**
+ * Email for one person. Cancelled "Email" (column H on that tab) wins;
+ * otherwise the Contacts tab. Blank when neither sheet has an address.
+ */
+export async function findEmailByFullName(fullName: string): Promise<string> {
+  const target = fullName.trim().toLowerCase();
+  if (!target) return "";
+
+  let cancelledEmail = "";
+  try {
+    const cancelled = await readTabRows("Cancelled (Oct)");
+    for (const row of cancelled) {
+      if (cell(row, "Name").toLowerCase() !== target) continue;
+      cancelledEmail = cell(row, "Email");
+      if (cancelledEmail) return cancelledEmail;
     }
+  } catch (err) {
+    if (!(err instanceof SheetTabMissingError)) throw err;
   }
-  return results;
+
+  try {
+    const contacts = await readTabRows("Contacts");
+    for (const row of contacts) {
+      if (cell(row, "Name").toLowerCase() !== target) continue;
+      const email = cell(row, "Email");
+      if (email) return email;
+    }
+  } catch (err) {
+    if (!(err instanceof SheetTabMissingError)) throw err;
+  }
+
+  return "";
 }
 
 export async function updateCampaignContent(row: number, input: { subject: string; messageBody: string }): Promise<void> {
