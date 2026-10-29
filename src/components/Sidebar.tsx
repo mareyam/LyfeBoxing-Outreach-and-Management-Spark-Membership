@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Dumbbell, ChevronDown, ChevronRight } from "lucide-react";
+import { Home, Dumbbell, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { agents } from "@/lib/data";
 import { agentIcons } from "@/lib/icons";
 
@@ -24,17 +24,83 @@ const lyfeBoxingLinks = [
   { href: "/lyfe-boxing/calendar", label: "Calendar" },
 ];
 
+const COLLAPSE_KEY = "sidebar-collapsed";
+
 export default function Sidebar() {
   const pathname = usePathname();
   const isLyfeBoxing = pathname.startsWith("/lyfe-boxing");
   const [lyfeBoxingOpen, setLyfeBoxingOpen] = useState(isLyfeBoxing);
   const [othersOpen, setOthersOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a per-viewer UI preference from localStorage, only available client-side after mount
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+    } catch {
+      // ignore — private browsing / blocked storage
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  if (collapsed) {
+    return (
+      <aside className="w-16 shrink-0 border-r border-neutral-200 bg-neutral-50/60 h-full overflow-y-auto flex flex-col items-center py-4 gap-2">
+        <button
+          onClick={toggleCollapsed}
+          title="Expand sidebar"
+          className="h-9 w-9 flex items-center justify-center rounded-lg text-neutral-500 hover:bg-white hover:text-neutral-900"
+        >
+          <ChevronsRight className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        </button>
+        <div className="w-full border-t border-neutral-200 my-1" />
+        <Link
+          href="/"
+          title="Home"
+          className={`h-9 w-9 flex items-center justify-center rounded-lg ${
+            pathname === "/" ? "bg-white text-neutral-900 shadow-sm border border-neutral-200" : "text-neutral-500 hover:bg-white"
+          }`}
+        >
+          <Home className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        </Link>
+        <Link
+          href="/lyfe-boxing"
+          title="Lyfe Boxing"
+          className={`h-9 w-9 flex items-center justify-center rounded-lg ${
+            isLyfeBoxing ? "bg-white text-neutral-900 shadow-sm border border-neutral-200" : "text-neutral-500 hover:bg-white"
+          }`}
+        >
+          <Dumbbell className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        </Link>
+      </aside>
+    );
+  }
 
   return (
     <aside className="w-72 shrink-0 border-r border-neutral-200 bg-neutral-50/60 h-full overflow-y-auto">
-      <div className="px-6 py-7">
-        <p className="text-base font-semibold text-neutral-900">Alex&apos;s Assistants</p>
-        <p className="text-sm text-neutral-400 mt-0.5">Sample preview · not live yet</p>
+      <div className="px-6 py-7 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-base font-semibold text-neutral-900">Alex&apos;s Assistants</p>
+          <p className="text-sm text-neutral-400 mt-0.5">Sample preview · not live yet</p>
+        </div>
+        <button
+          onClick={toggleCollapsed}
+          title="Collapse sidebar"
+          className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-white hover:text-neutral-700"
+        >
+          <ChevronsLeft className="h-4 w-4" strokeWidth={1.75} />
+        </button>
       </div>
       <nav className="px-3 pb-6 space-y-0.5">
         <SidebarLink href="/" label="Home" Icon={Home} active={pathname === "/"} />

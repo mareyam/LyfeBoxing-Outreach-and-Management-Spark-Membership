@@ -119,6 +119,26 @@ export async function queueCampaignSend(row: number): Promise<void> {
   });
 }
 
+export async function updateCampaignContent(row: number, input: { subject: string; messageBody: string }): Promise<void> {
+  const sheets = getSheetsClient();
+
+  const current = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Campaigns!G${row}`,
+  });
+  const status = current.data.values?.[0]?.[0] ?? "Draft";
+  if (!["Draft", "Error"].includes(status)) {
+    throw new Error(`Row ${row} can't be edited from status "${status}".`);
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Campaigns!D${row}:E${row}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[input.subject, input.messageBody]] },
+  });
+}
+
 /** Thrown when a tab genuinely doesn't exist yet (vs. a general API error). */
 export class SheetTabMissingError extends Error {
   constructor(public tabName: string) {
@@ -139,7 +159,7 @@ function isMissingTabError(err: unknown, tabName: string): boolean {
  * SMS Conversations, Contacts) so this app never bakes real member data
  * into source files — it's always read live from the sheet.
  */
-export async function readTabRows(tabName: string): Promise<Record<string, string>[]> {
+export async function readTabRows(tabName: string): Promise<(Record<string, string> & { _row: number })[]> {
   const sheets = getSheetsClient();
   let res;
   try {
@@ -155,8 +175,8 @@ export async function readTabRows(tabName: string): Promise<Record<string, strin
   const rows = res.data.values ?? [];
   if (rows.length === 0) return [];
   const headers = rows[0].map((h) => (h ?? "").toString().trim());
-  return rows.slice(1).map((row) => {
-    const obj: Record<string, string> = {};
+  return rows.slice(1).map((row, i) => {
+    const obj = { _row: i + 2 } as Record<string, string> & { _row: number };
     headers.forEach((h, idx) => {
       if (h) obj[h] = (row[idx] ?? "").toString();
     });
@@ -177,6 +197,56 @@ export async function readRawRows(tabName: string): Promise<string[][]> {
     if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
     throw err;
   }
+}
+
+function columnLetter(index: number): string {
+  let n = index;
+  let letter = "";
+  do {
+    letter = String.fromCharCode(65 + (n % 26)) + letter;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letter;
+}
+
+/**
+ * Writes specific columns (matched by header name) on an existing row of
+ * any tab. Used for editable per-contact drafts that live directly on a
+ * reference tab (e.g. Past Due's Email Subject / Email Body / Email Status
+ * columns) rather than in the Campaigns tab.
+ */
+export async function updateTabRowCells(
+  tabName: string,
+  rowNumber: number,
+  values: Record<string, string>
+): Promise<void> {
+  const sheets = getSheetsClient();
+  let headerRes;
+  try {
+    headerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A1:ZZ1`,
+    });
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+  const headers = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+
+  const data = Object.entries(values)
+    .map(([header, value]) => {
+      const colIndex = headers.findIndex((h) => h.toLowerCase() === header.toLowerCase());
+      if (colIndex === -1) return null;
+      return { range: `${tabName}!${columnLetter(colIndex)}${rowNumber}`, values: [[value]] };
+    })
+    .filter((d): d is { range: string; values: string[][] } => d !== null);
+
+  if (data.length === 0) return;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { valueInputOption: "RAW", data },
+  });
 }
 
 export async function appendAppointmentRequest(input: {
