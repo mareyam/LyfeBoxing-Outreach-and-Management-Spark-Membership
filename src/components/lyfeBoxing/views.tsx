@@ -1735,9 +1735,40 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
   const [messageBody, setMessageBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [brief, setBrief] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
 
   const smsLength = messageBody.length;
   const overSmsLimit = channel === "SMS" && smsLength > 145;
+
+  async function handleGenerate() {
+    if (!brief.trim()) {
+      setGenError("Type a rough idea first, e.g. \"20% off this weekend only\".");
+      return;
+    }
+    setGenError(null);
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/campaigns/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief, channel }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGenError(data.error ?? "Couldn't generate a draft.");
+        return;
+      }
+      if (data.subject) setSubject(data.subject);
+      if (data.body) setMessageBody(data.body);
+      if (!campaignName.trim()) setCampaignName(brief.slice(0, 60));
+    } catch {
+      setGenError("Couldn't generate a draft.");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1810,6 +1841,27 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 space-y-2">
+          <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
+          <div className="flex gap-2">
+            <input
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              placeholder="e.g. 20% off any membership upgrade this weekend only"
+            />
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 whitespace-nowrap"
+            >
+              {generating ? "Generating…" : "Generate with AI"}
+            </button>
+          </div>
+          {genError && <p className="text-sm text-red-600">{genError}</p>}
         </div>
 
         {channel === "Email" && (
