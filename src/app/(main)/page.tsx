@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Dumbbell } from "lucide-react";
 import { agents } from "@/lib/data";
 import { Card } from "@/components/ui";
 import { agentIcons } from "@/lib/icons";
@@ -17,7 +17,22 @@ export default function Home() {
         bookings are being made yet.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
+      <Link href="/lyfe-boxing" className="group block mt-6">
+        <Card className="transition-all group-hover:shadow-md group-hover:border-neutral-300 flex items-center gap-4">
+          <div className="h-10 w-10 rounded-xl bg-neutral-900 flex items-center justify-center shrink-0">
+            <Dumbbell className="h-5 w-5 text-white" strokeWidth={1.75} />
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-semibold text-neutral-900">Lyfe Boxing — live gym ops site</p>
+            <p className="text-sm text-neutral-500 mt-0.5">
+              Real client build: campaigns, past due, win-back, and more, reading from a live Google Sheet.
+            </p>
+          </div>
+          <ArrowUpRight className="h-4 w-4 text-neutral-300 group-hover:text-neutral-500 transition-colors shrink-0" />
+        </Card>
+      </Link>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
         {agents.map((a) => {
           const Icon = agentIcons[a.icon];
           return (
