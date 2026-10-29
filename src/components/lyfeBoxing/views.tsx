@@ -574,15 +574,29 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const openContact = pageItems.find((c) => c.name === openDraftFor);
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === winbackTag(openDraftFor)) : undefined;
 
+  const eligibleNames = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).map((c) => c.name);
+  const missingDraftCount = campaigns
+    ? eligibleNames.filter((name) => !campaigns.find((camp) => camp.notes === winbackTag(name))).length
+    : eligibleNames.length;
+
   return (
     <>
       <Card className="mb-6">
-        <p className="font-semibold text-neutral-900">
-          Win-back: {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago
-        </p>
-        <p className="text-sm text-neutral-500 mt-1">
-          Generate a draft per contact below, edit it if you like, then send it whenever you&apos;re ready.
-        </p>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="font-semibold text-neutral-900">
+              Win-back: {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago
+            </p>
+            <p className="text-sm text-neutral-500 mt-1">
+              Generate a draft per contact below, edit it if you like, then send it whenever you&apos;re ready.
+            </p>
+          </div>
+          <GenerateAllWinbackButton
+            names={eligibleNames}
+            missingCount={missingDraftCount}
+            onDone={loadCampaigns}
+          />
+        </div>
       </Card>
       <Card className="mb-6">
         <p className="text-base text-neutral-500 mb-3">Cancellations by category</p>
@@ -676,6 +690,69 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         />
       )}
     </>
+  );
+}
+
+function GenerateAllWinbackButton({
+  names,
+  missingCount,
+  onDone,
+}: {
+  names: string[];
+  missingCount: number;
+  onDone: () => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+
+  if (names.length === 0) return null;
+
+  async function generateAll() {
+    setState("sending");
+    try {
+      // Refetch right before so we don't re-draft anyone another tab/person just created.
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      const existing: Campaign[] = res.ok ? data.campaigns ?? [] : [];
+      const toDraft = names.filter((name) => !existing.find((c) => c.notes === winbackTag(name)));
+
+      for (const name of toDraft) {
+        const r = await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignName: `Win-back: ${name}`,
+            channel: "Email",
+            audience: "",
+            subject: WINBACK_EMAIL_TEMPLATE.subject,
+            messageBody: WINBACK_EMAIL_TEMPLATE.messageBody,
+            notes: winbackTag(name),
+          }),
+        });
+        if (!r.ok) throw new Error();
+      }
+      await onDone();
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  if (missingCount === 0) {
+    return <span className="text-sm font-medium text-neutral-500">All drafts generated</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={generateAll}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+      >
+        <Sparkles className="h-4 w-4" strokeWidth={2} />
+        {state === "sending" ? "Drafting…" : `Generate all (${missingCount})`}
+      </button>
+      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+    </div>
   );
 }
 
@@ -795,12 +872,42 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
     setMembers((prev) => prev.map((m) => (m.row === row ? { ...m, ...changes } : m)));
   }
 
+  const missingDraftCount = members.filter((m) => !m.emailBody).length;
+
+  async function generateAllDrafts() {
+    const missing = members.filter((m) => !m.emailBody);
+    for (const m of missing) {
+      const res = await fetch("/api/past-due/draft", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          row: m.row,
+          subject: PAST_DUE_EMAIL_TEMPLATE.subject,
+          messageBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
+        }),
+      });
+      if (res.ok) {
+        patchMember(m.row, {
+          emailSubject: PAST_DUE_EMAIL_TEMPLATE.subject,
+          emailBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
+          emailStatus: "Draft",
+        });
+      }
+    }
+  }
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <Stat label="Members past due" value={members.length} />
         <Stat label="Total overdue amount" value={`$${totalOwed.toLocaleString()}`} />
       </div>
+
+      {members.length > 0 && (
+        <div className="flex justify-end mb-4">
+          <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
+        </div>
+      )}
 
       {members.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No one is past due.</Card>
@@ -857,6 +964,36 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         />
       )}
     </>
+  );
+}
+
+function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number; onGenerate: () => Promise<void> }) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+
+  if (missingCount === 0) {
+    return <span className="text-sm font-medium text-neutral-500">All drafts generated</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+      <button
+        onClick={async () => {
+          setState("sending");
+          try {
+            await onGenerate();
+            setState("idle");
+          } catch {
+            setState("error");
+          }
+        }}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+      >
+        <Sparkles className="h-4 w-4" strokeWidth={2} />
+        {state === "sending" ? "Drafting…" : `Generate all (${missingCount})`}
+      </button>
+    </div>
   );
 }
 

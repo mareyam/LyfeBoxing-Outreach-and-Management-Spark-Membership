@@ -18,8 +18,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { campaignName, channel, audience, subject, messageBody, notes } = body ?? {};
 
-    if (!campaignName || !channel || !audience || !messageBody) {
-      return NextResponse.json({ error: "campaignName, channel, audience, and messageBody are required." }, { status: 400 });
+    // audience may be legitimately blank — per-contact drafts (e.g. win-back)
+    // target one named person who isn't in the audience dropdown.
+    if (!campaignName || !channel || !messageBody) {
+      return NextResponse.json({ error: "campaignName, channel, and messageBody are required." }, { status: 400 });
     }
     if (channel === "Email" && !subject) {
       return NextResponse.json({ error: "Subject is required for email campaigns." }, { status: 400 });
