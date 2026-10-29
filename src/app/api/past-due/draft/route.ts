@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateTabRowCells, SheetsNotConfiguredError, SheetTabMissingError } from "@/lib/googleSheetsServer";
+import { notifyGrok, GrokNotConfiguredError } from "@/lib/notifyGrok";
 
 const TAB = "Past Due";
 
@@ -34,19 +35,33 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// Marks a draft as ready to go out — an external automation ("grok") picks
-// up rows in this status and sends them; this app never sends directly.
+// Marks a draft as ready to go out and tells Grok — Grok is the only thing
+// that actually sends; this app never sends email/SMS directly.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const row = Number(body?.row);
+    const email: string | undefined = body?.email;
 
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
     }
+    if (!email || !email.trim()) {
+      return NextResponse.json({ error: "This contact has no email on file — can't send." }, { status: 400 });
+    }
 
     await updateTabRowCells(TAB, row, { "Email Status": "Queued" });
-    return NextResponse.json({ ok: true });
+
+    try {
+      await notifyGrok({ tab: "Past Due", row, kind: "past-due" });
+    } catch (err) {
+      if (err instanceof GrokNotConfiguredError) {
+        return NextResponse.json({ ok: true, queued: true, grokWarning: err.message });
+      }
+      return NextResponse.json({ ok: true, queued: true, grokWarning: err instanceof Error ? err.message : "Couldn't notify Grok." });
+    }
+
+    return NextResponse.json({ ok: true, queued: true });
   } catch (err) {
     if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });

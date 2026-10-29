@@ -99,24 +99,53 @@ export async function appendCampaign(input: {
   });
 }
 
-export async function queueCampaignSend(row: number): Promise<void> {
+/**
+ * Queues a campaign row for Grok to send: optionally re-targets the
+ * Audience column (used for per-contact win-back/trial drafts so Grok
+ * sends to exactly one person, never a whole membership), sets
+ * Send=TRUE / Status=Queued, and returns the row's Notes so the caller
+ * can derive what kind of send this is (campaign vs winback vs trial).
+ */
+export async function queueCampaignSend(row: number, audience?: string): Promise<{ notes: string }> {
   const sheets = getSheetsClient();
 
   const current = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `Campaigns!F${row}:G${row}`,
+    range: `Campaigns!F${row}:J${row}`,
   });
-  const [sendVal, statusVal] = current.data.values?.[0] ?? ["FALSE", "Draft"];
+  const [sendVal, statusVal, , , notesVal] = current.data.values?.[0] ?? [];
   if ((sendVal ?? "").toString().toUpperCase() === "TRUE" || !["Draft", "Error"].includes(statusVal ?? "Draft")) {
     throw new Error(`Row ${row} can't be queued from status "${statusVal}".`);
   }
 
-  await sheets.spreadsheets.values.update({
+  const data = [{ range: `Campaigns!F${row}:G${row}`, values: [["TRUE", "Queued"]] }];
+  if (audience !== undefined) {
+    data.push({ range: `Campaigns!C${row}`, values: [[audience]] });
+  }
+
+  await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    range: `Campaigns!F${row}:G${row}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [["TRUE", "Queued"]] },
+    requestBody: { valueInputOption: "RAW", data },
   });
+
+  return { notes: (notesVal ?? "").toString() };
+}
+
+export type BulkQueueResult = { row: number; notes: string; ok: boolean; error?: string };
+
+export async function queueCampaignSendBulk(
+  items: { row: number; audience?: string }[]
+): Promise<BulkQueueResult[]> {
+  const results: BulkQueueResult[] = [];
+  for (const item of items) {
+    try {
+      const { notes } = await queueCampaignSend(item.row, item.audience);
+      results.push({ row: item.row, notes, ok: true });
+    } catch (err) {
+      results.push({ row: item.row, notes: "", ok: false, error: err instanceof Error ? err.message : "Unknown error" });
+    }
+  }
+  return results;
 }
 
 export async function updateCampaignContent(row: number, input: { subject: string; messageBody: string }): Promise<void> {

@@ -70,9 +70,11 @@ function DraftModal({
   showSubject,
   locked,
   statusLabel,
+  sendDisabledReason,
   onClose,
   onSave,
   onSend,
+  onPoll,
 }: {
   title: string;
   subtitle: string;
@@ -81,9 +83,12 @@ function DraftModal({
   showSubject: boolean;
   locked: boolean;
   statusLabel?: string;
+  sendDisabledReason?: string;
   onClose: () => void;
   onSave: (subject: string, body: string) => Promise<void>;
   onSend: () => Promise<void>;
+  /** Called every 15s while statusLabel === "Queued" so the modal picks up Grok's Sent/Error update. */
+  onPoll?: () => Promise<void>;
 }) {
   const [editSubject, setEditSubject] = useState(subject);
   const [editBody, setEditBody] = useState(body);
@@ -94,6 +99,14 @@ function DraftModal({
   const [saved, setSaved] = useState(false);
 
   const dirty = editSubject !== subject || editBody !== body;
+
+  useEffect(() => {
+    if (statusLabel !== "Queued" || !onPoll) return;
+    const interval = setInterval(() => {
+      onPoll();
+    }, 15_000);
+    return () => clearInterval(interval);
+  }, [statusLabel, onPoll]);
 
   async function handleSave() {
     setSaving(true);
@@ -176,6 +189,7 @@ function DraftModal({
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {!dirty && sendDisabledReason && <p className="text-sm text-amber-700">{sendDisabledReason}</p>}
 
             <div className="flex items-center justify-between pt-2">
               <button
@@ -189,8 +203,8 @@ function DraftModal({
               {!confirmingSend ? (
                 <button
                   onClick={() => setConfirmingSend(true)}
-                  disabled={dirty}
-                  title={dirty ? "Save your changes first" : undefined}
+                  disabled={dirty || !!sendDisabledReason}
+                  title={dirty ? "Save your changes first" : sendDisabledReason}
                   className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-40"
                 >
                   <Send className="h-3.5 w-3.5" strokeWidth={2} />
@@ -311,6 +325,39 @@ function parseSlashDate(dateStr: string): Date | null {
   if (!m) return null;
   const [, mm, dd, yyyy] = m;
   return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+}
+
+/** First word of a full name, e.g. "Cheyenne Randall" -> "Cheyenne". */
+function firstNameOf(fullName: string): string {
+  const trimmed = (fullName ?? "").trim();
+  return trimmed ? trimmed.split(/\s+/)[0] : "there";
+}
+
+/** Fills {First name} with the contact's actual first name — drafts should never go out with the literal token still in them. */
+function personalize(template: string, fullName: string): string {
+  return template.replaceAll("{First name}", firstNameOf(fullName));
+}
+
+/** Looks up an email for a contact by name, preferring the row's own email field, falling back to the Contacts tab. */
+function useContactEmails() {
+  const [byName, setByName] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    fetch(`/api/lyfe-data?tab=${encodeURIComponent("Contacts")}`)
+      .then((r) => r.json())
+      .then((d: { rows?: SheetRow[] }) => {
+        const map = new Map<string, string>();
+        for (const r of d.rows ?? []) {
+          const name = findField(r, "name").trim().toLowerCase();
+          const email = findField(r, "email").trim();
+          if (name && email) map.set(name, email);
+        }
+        setByName(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  return useCallback((name: string, rowEmail?: string) => rowEmail?.trim() || byName.get(name.trim().toLowerCase()) || "", [byName]);
 }
 
 function SetupNeeded() {
@@ -511,6 +558,10 @@ function winbackTag(name: string): string {
   return `winback:${name}`;
 }
 
+function contactAudience(name: string, email: string): string {
+  return `Contact: ${name} <${email}>`;
+}
+
 export function CancelledView() {
   return (
     <div className="max-w-6xl">
@@ -524,6 +575,8 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const emailFor = useContactEmails();
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -542,6 +595,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
 
   const mapped = rows.map((r) => ({
     name: findField(r, "name"),
+    email: findField(r, "email"),
     membership: findField(r, "membership"),
     signedDate: findField(r, "signed"),
     cancelledDate: findField(r, "cancelled date", "cancelled"),
@@ -573,11 +627,29 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
 
   const openContact = pageItems.find((c) => c.name === openDraftFor);
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === winbackTag(openDraftFor)) : undefined;
+  const openEmail = openContact ? emailFor(openContact.name, openContact.email) : "";
 
   const eligibleNames = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).map((c) => c.name);
   const missingDraftCount = campaigns
     ? eligibleNames.filter((name) => !campaigns.find((camp) => camp.notes === winbackTag(name))).length
     : eligibleNames.length;
+
+  // Selectable = has a Draft-status campaign ready to queue
+  const selectableNames = pageItems
+    .filter((c) => {
+      const camp = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
+      return camp && camp.status === "Draft" && emailFor(c.name, c.email);
+    })
+    .map((c) => c.name);
+
+  function toggleSelected(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -591,11 +663,22 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
               Generate a draft per contact below, edit it if you like, then send it whenever you&apos;re ready.
             </p>
           </div>
-          <GenerateAllWinbackButton
-            names={eligibleNames}
-            missingCount={missingDraftCount}
-            onDone={loadCampaigns}
-          />
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <SendSelectedButton
+                campaigns={campaigns ?? []}
+                selectedNames={selected}
+                emailFor={emailFor}
+                tagFn={winbackTag}
+                audienceFn={contactAudience}
+                onDone={async () => {
+                  setSelected(new Set());
+                  await loadCampaigns();
+                }}
+              />
+            )}
+            <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} onDone={loadCampaigns} />
+          </div>
         </div>
       </Card>
       <Card className="mb-6">
@@ -622,6 +705,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-2 font-medium w-6"></th>
               <th className="py-2 pr-4 font-medium">Name</th>
               <th className="py-2 pr-4 font-medium">Membership</th>
               <th className="py-2 pr-4 font-medium">Signed</th>
@@ -632,28 +716,42 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((c, i) => (
-              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory || "—"}</td>
-                <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
-                <td className="py-2.5 pr-4 whitespace-nowrap">
-                  {isWinbackEligible(c.cancelledDate) ? (
-                    <WinbackDraftCell
-                      name={c.name}
-                      campaign={campaigns?.find((camp) => camp.notes === winbackTag(c.name))}
-                      onGenerated={loadCampaigns}
-                      onOpen={() => setOpenDraftFor(c.name)}
-                    />
-                  ) : (
-                    <span className="text-xs text-neutral-300">Not eligible yet</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {pageItems.map((c, i) => {
+              const canSelect = selectableNames.includes(c.name);
+              return (
+                <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                  <td className="py-2.5 pr-2">
+                    {canSelect && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(c.name)}
+                        onChange={() => toggleSelected(c.name)}
+                        className="rounded border-neutral-300"
+                      />
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
+                  <td className="py-2.5 pr-4 whitespace-nowrap">
+                    {isWinbackEligible(c.cancelledDate) ? (
+                      <WinbackDraftCell
+                        name={c.name}
+                        hasEmail={!!emailFor(c.name, c.email)}
+                        campaign={campaigns?.find((camp) => camp.notes === winbackTag(c.name))}
+                        onGenerated={loadCampaigns}
+                        onOpen={() => setOpenDraftFor(c.name)}
+                      />
+                    ) : (
+                      <span className="text-xs text-neutral-300">Not eligible yet</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
@@ -667,8 +765,10 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
           body={openCampaign.messageBody}
           showSubject
           statusLabel={openCampaign.status}
+          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
           locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
           onClose={() => setOpenDraftFor(null)}
+          onPoll={loadCampaigns}
           onSave={async (subject, messageBody) => {
             const res = await fetch("/api/campaigns", {
               method: "PATCH",
@@ -682,7 +782,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             const res = await fetch("/api/campaigns/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row }),
+              body: JSON.stringify({ row: openCampaign.row, audience: contactAudience(openContact.name, openEmail) }),
             });
             if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
             await loadCampaigns();
@@ -690,6 +790,66 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         />
       )}
     </>
+  );
+}
+
+/** Queues every selected Draft row and tells Grok once for the whole batch. Generic enough to share between Win-back and Trial Conversion. */
+function SendSelectedButton({
+  campaigns,
+  selectedNames,
+  emailFor,
+  tagFn,
+  audienceFn,
+  onDone,
+}: {
+  campaigns: Campaign[];
+  selectedNames: Set<string>;
+  emailFor: (name: string, rowEmail?: string) => string;
+  tagFn: (name: string) => string;
+  audienceFn: (name: string, email: string) => string;
+  onDone: () => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+
+  async function sendSelected() {
+    setState("sending");
+    try {
+      const items = [...selectedNames]
+        .map((name) => {
+          const camp = campaigns.find((c) => c.notes === tagFn(name));
+          const email = emailFor(name);
+          if (!camp || !email) return null;
+          return { row: camp.row, audience: audienceFn(name, email) };
+        })
+        .filter((x): x is { row: number; audience: string } => x !== null);
+
+      if (items.length === 0) throw new Error();
+
+      const res = await fetch("/api/campaigns/send-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) throw new Error();
+      await onDone();
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={sendSelected}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+      >
+        <Send className="h-3.5 w-3.5" strokeWidth={2} />
+        {state === "sending" ? "Sending…" : `Send selected (${selectedNames.size})`}
+      </button>
+      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+    </div>
   );
 }
 
@@ -723,8 +883,8 @@ function GenerateAllWinbackButton({
             campaignName: `Win-back: ${name}`,
             channel: "Email",
             audience: "",
-            subject: WINBACK_EMAIL_TEMPLATE.subject,
-            messageBody: WINBACK_EMAIL_TEMPLATE.messageBody,
+            subject: personalize(WINBACK_EMAIL_TEMPLATE.subject, name),
+            messageBody: personalize(WINBACK_EMAIL_TEMPLATE.messageBody, name),
             notes: winbackTag(name),
           }),
         });
@@ -758,11 +918,13 @@ function GenerateAllWinbackButton({
 
 function WinbackDraftCell({
   name,
+  hasEmail,
   campaign,
   onGenerated,
   onOpen,
 }: {
   name: string;
+  hasEmail: boolean;
   campaign: Campaign | undefined;
   onGenerated: () => Promise<void>;
   onOpen: () => void;
@@ -784,8 +946,8 @@ function WinbackDraftCell({
                 campaignName: `Win-back: ${name}`,
                 channel: "Email",
                 audience: "",
-                subject: WINBACK_EMAIL_TEMPLATE.subject,
-                messageBody: WINBACK_EMAIL_TEMPLATE.messageBody,
+                subject: personalize(WINBACK_EMAIL_TEMPLATE.subject, name),
+                messageBody: personalize(WINBACK_EMAIL_TEMPLATE.messageBody, name),
                 notes: winbackTag(name),
               }),
             });
@@ -809,13 +971,16 @@ function WinbackDraftCell({
   const isNew = campaign.status === "Draft";
 
   return (
-    <button
-      onClick={onOpen}
-      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-    >
-      {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-      {isNew ? "New draft" : campaign.status}
-    </button>
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={onOpen}
+        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+        {isNew ? "New draft" : campaign.status}
+      </button>
+      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
+    </div>
   );
 }
 
@@ -826,6 +991,7 @@ function WinbackDraftCell({
 type PastDueMember = {
   row: number;
   name: string;
+  email: string;
   totalOverdue: string;
   paymentAmount: string;
   lastAttempt: string;
@@ -840,6 +1006,20 @@ const PAST_DUE_EMAIL_TEMPLATE = {
     "Hey {First name},\n\nJust a friendly reminder that your account has an outstanding balance. If you've already taken care of this, thank you — please disregard.\n\nIf not, you can update your payment method or settle the balance whenever works for you. Let us know if anything's off or you'd like to talk it through.\n\nLyfe Boxing",
 };
 
+function rowToPastDueMember(r: SheetRow): PastDueMember {
+  return {
+    row: r._row,
+    name: findField(r, "contact", "name", "member"),
+    email: findField(r, "email"),
+    totalOverdue: findField(r, "total overdue"),
+    paymentAmount: findField(r, "payment amount"),
+    lastAttempt: findField(r, "last attempt"),
+    emailSubject: findField(r, "email subject"),
+    emailBody: findField(r, "email body"),
+    emailStatus: findField(r, "email status"),
+  };
+}
+
 export function PastDueView() {
   return (
     <div className="max-w-5xl">
@@ -851,18 +1031,18 @@ export function PastDueView() {
 
 function PastDueList({ rows }: { rows: SheetRow[] }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
-  const [members, setMembers] = useState<PastDueMember[]>(() =>
-    rows.map((r) => ({
-      row: r._row,
-      name: findField(r, "contact", "name", "member"),
-      totalOverdue: findField(r, "total overdue"),
-      paymentAmount: findField(r, "payment amount"),
-      lastAttempt: findField(r, "last attempt"),
-      emailSubject: findField(r, "email subject"),
-      emailBody: findField(r, "email body"),
-      emailStatus: findField(r, "email status"),
-    }))
-  );
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [members, setMembers] = useState<PastDueMember[]>(() => rows.map(rowToPastDueMember));
+
+  const refetch = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/lyfe-data?tab=${encodeURIComponent("Past Due")}`);
+      const data = await res.json();
+      if (res.ok) setMembers((data.rows ?? []).map(rowToPastDueMember));
+    } catch {
+      // keep showing what we have
+    }
+  }, []);
 
   const totalOwed = members.reduce((sum, m) => sum + parseMoney(m.totalOverdue), 0);
   const { pageItems, page, setPage, totalPages } = usePagination(members);
@@ -873,6 +1053,16 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   }
 
   const missingDraftCount = members.filter((m) => !m.emailBody).length;
+  const selectableRows = pageItems.filter((m) => m.emailStatus === "Draft" && m.email).map((m) => m.row);
+
+  function toggleSelected(row: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(row)) next.delete(row);
+      else next.add(row);
+      return next;
+    });
+  }
 
   async function generateAllDrafts() {
     const missing = members.filter((m) => !m.emailBody);
@@ -882,14 +1072,14 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           row: m.row,
-          subject: PAST_DUE_EMAIL_TEMPLATE.subject,
-          messageBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
+          subject: personalize(PAST_DUE_EMAIL_TEMPLATE.subject, m.name),
+          messageBody: personalize(PAST_DUE_EMAIL_TEMPLATE.messageBody, m.name),
         }),
       });
       if (res.ok) {
         patchMember(m.row, {
-          emailSubject: PAST_DUE_EMAIL_TEMPLATE.subject,
-          emailBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
+          emailSubject: personalize(PAST_DUE_EMAIL_TEMPLATE.subject, m.name),
+          emailBody: personalize(PAST_DUE_EMAIL_TEMPLATE.messageBody, m.name),
           emailStatus: "Draft",
         });
       }
@@ -904,7 +1094,17 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
       </div>
 
       {members.length > 0 && (
-        <div className="flex justify-end mb-4">
+        <div className="flex items-center justify-end gap-2 mb-4">
+          {selected.size > 0 && (
+            <PastDueSendSelectedButton
+              members={members}
+              selectedRows={selected}
+              onDone={async () => {
+                setSelected(new Set());
+                await refetch();
+              }}
+            />
+          )}
           <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
         </div>
       )}
@@ -916,15 +1116,25 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
           <div className="space-y-3">
             {pageItems.map((m) => (
               <Card key={m.row}>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
-                    <p className="text-sm text-neutral-500 mt-0.5">
-                      {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
-                      {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
-                    </p>
+                <div className="flex items-center gap-3">
+                  {selectableRows.includes(m.row) && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(m.row)}
+                      onChange={() => toggleSelected(m.row)}
+                      className="rounded border-neutral-300"
+                    />
+                  )}
+                  <div className="flex-1 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
+                      <p className="text-sm text-neutral-500 mt-0.5">
+                        {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
+                        {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
+                      </p>
+                    </div>
+                    <PastDueDraftCell member={m} onGenerated={(c) => patchMember(m.row, c)} onOpen={() => setOpenRow(m.row)} />
                   </div>
-                  <PastDueDraftCell member={m} onGenerated={(c) => patchMember(m.row, c)} onOpen={() => setOpenRow(m.row)} />
                 </div>
               </Card>
             ))}
@@ -941,8 +1151,10 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
           body={open.emailBody}
           showSubject
           statusLabel={open.emailStatus || "Draft"}
+          sendDisabledReason={open.email ? undefined : "This contact has no email on file — can't send."}
           locked={open.emailStatus === "Queued" || open.emailStatus === "Sent"}
           onClose={() => setOpenRow(null)}
+          onPoll={refetch}
           onSave={async (subject, messageBody) => {
             const res = await fetch("/api/past-due/draft", {
               method: "PATCH",
@@ -956,7 +1168,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             const res = await fetch("/api/past-due/draft", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: open.row }),
+              body: JSON.stringify({ row: open.row, email: open.email }),
             });
             if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
             patchMember(open.row, { emailStatus: "Queued" });
@@ -964,6 +1176,55 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
         />
       )}
     </>
+  );
+}
+
+function PastDueSendSelectedButton({
+  members,
+  selectedRows,
+  onDone,
+}: {
+  members: PastDueMember[];
+  selectedRows: Set<number>;
+  onDone: () => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+
+  async function sendSelected() {
+    setState("sending");
+    try {
+      const items = [...selectedRows]
+        .map((row) => members.find((m) => m.row === row))
+        .filter((m): m is PastDueMember => !!m && !!m.email)
+        .map((m) => ({ row: m.row, email: m.email }));
+
+      if (items.length === 0) throw new Error();
+
+      const res = await fetch("/api/past-due/send-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) throw new Error();
+      await onDone();
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={sendSelected}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+      >
+        <Send className="h-3.5 w-3.5" strokeWidth={2} />
+        {state === "sending" ? "Sending…" : `Send selected (${selectedRows.size})`}
+      </button>
+      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+    </div>
   );
 }
 
@@ -1016,21 +1277,15 @@ function PastDueDraftCell({
           setGenerating(true);
           setError(false);
           try {
+            const subject = personalize(PAST_DUE_EMAIL_TEMPLATE.subject, member.name);
+            const messageBody = personalize(PAST_DUE_EMAIL_TEMPLATE.messageBody, member.name);
             const res = await fetch("/api/past-due/draft", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                row: member.row,
-                subject: PAST_DUE_EMAIL_TEMPLATE.subject,
-                messageBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
-              }),
+              body: JSON.stringify({ row: member.row, subject, messageBody }),
             });
             if (!res.ok) throw new Error();
-            onGenerated({
-              emailSubject: PAST_DUE_EMAIL_TEMPLATE.subject,
-              emailBody: PAST_DUE_EMAIL_TEMPLATE.messageBody,
-              emailStatus: "Draft",
-            });
+            onGenerated({ emailSubject: subject, emailBody: messageBody, emailStatus: "Draft" });
           } catch {
             setError(true);
           } finally {
@@ -1049,13 +1304,16 @@ function PastDueDraftCell({
   const isNew = !member.emailStatus || member.emailStatus === "Draft";
 
   return (
-    <button
-      onClick={onOpen}
-      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-    >
-      {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-      {isNew ? "New draft" : member.emailStatus}
-    </button>
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={onOpen}
+        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+        {isNew ? "New draft" : member.emailStatus}
+      </button>
+      {isNew && !member.email && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
+    </div>
   );
 }
 
@@ -1604,99 +1862,325 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
 
 const TRIAL_MEMBERSHIP_NAMES = ["1 Day Boxing Program", "Ignite Pro | Adult Boxing | 3-Class Trial for $19.95"];
 
-const TRIAL_SMS = {
-  campaignName: "Trial: After first class",
-  channel: "SMS" as const,
-  subject: "",
-  messageBody: "Great first class, {First name}! How are you feeling? We're pumped to have you training with us at Lyfe Boxing.",
-};
-
-const TRIAL_UPGRADE_EMAIL = {
-  campaignName: "Trial: Day 3 upgrade offer",
-  channel: "Email" as const,
+const TRIAL_UPGRADE_EMAIL_TEMPLATE = {
   subject: "Ready to make it official, {First name}?",
   messageBody:
     "Hey {First name},\n\nYou're a few days into training with us and we love having you in the gym.\n\nIf you're feeling it, now's a great time to lock in a membership — Basic Boxer 2x or Knock Out Boxer Unlimited both give you room to keep building momentum. [OFFER]\n\nLet us know and we'll get you set up.\n\nLyfe Boxing",
 };
 
+const TRIAL_SMS_TEMPLATE =
+  "Great first class, {First name}! How are you feeling? We're pumped to have you training with us at Lyfe Boxing.";
+
+function trialTag(name: string): string {
+  return `trial:${name}`;
+}
+
 export function TrialConversionView() {
-  const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
-
-  async function generate() {
-    setState("sending");
-    try {
-      for (const draft of [TRIAL_SMS, TRIAL_UPGRADE_EMAIL]) {
-        const res = await fetch("/api/campaigns", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campaignName: draft.campaignName,
-            channel: draft.channel,
-            audience: "1 Day Boxing Program",
-            subject: draft.subject,
-            messageBody: draft.messageBody,
-            notes: "Trial / 1 Day Boxing Program members — review audience before sending if targeting Ignite Pro trial too",
-          }),
-        });
-        if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to draft campaign.");
-      }
-      setState("done");
-    } catch {
-      setState("error");
-    }
-  }
-
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       <PageHeader
         title="Trial Conversion"
         subtitle="Trial and 1-Day Boxing Program members to follow up with and convert to a full membership."
         tool="Google Sheets (All Memberships) + Campaigns"
       />
-
-      <Card className="mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <p className="font-semibold text-neutral-900">Drafts for trial members</p>
-            <p className="text-sm text-neutral-500 mt-1">Drafts a first-class SMS and a day-3 upgrade email into Campaigns as Drafts.</p>
-          </div>
-          {state === "done" ? (
-            <span className="text-sm font-medium text-neutral-600">Drafts added to Campaigns</span>
-          ) : (
-            <button
-              onClick={generate}
-              disabled={state === "sending"}
-              className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
-            >
-              <Sparkles className="h-4 w-4" strokeWidth={2} />
-              {state === "sending" ? "Drafting…" : "Generate conversion drafts"}
-            </button>
-          )}
-          {state === "error" && <p className="text-sm text-red-600 w-full">Something went wrong — try again.</p>}
-        </div>
-      </Card>
-
       <SheetGate tab="All Memberships">
         {(rows) => {
           const trialMembers = rows
-            .map((r) => ({ name: findField(r, "name"), membership: findField(r, "membership") }))
+            .map((r) => ({ name: findField(r, "name"), email: findField(r, "email"), membership: findField(r, "membership") }))
             .filter((m) => TRIAL_MEMBERSHIP_NAMES.includes(m.membership));
-
-          if (trialMembers.length === 0) {
-            return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
-          }
-          return (
-            <div className="space-y-3">
-              {trialMembers.map((m, i) => (
-                <Card key={`${m.name}-${i}`}>
-                  <p className="font-semibold text-neutral-900">{m.name}</p>
-                  <p className="text-sm text-neutral-500 mt-0.5">{m.membership}</p>
-                </Card>
-              ))}
-            </div>
-          );
+          return <TrialTable trialMembers={trialMembers} />;
         }}
       </SheetGate>
+    </div>
+  );
+}
+
+function TrialTable({ trialMembers }: { trialMembers: { name: string; email: string; membership: string }[] }) {
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const emailFor = useContactEmails();
+
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      if (res.ok) setCampaigns(data.campaigns);
+    } catch {
+      // the rest of the page still works without this
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
+    loadCampaigns();
+  }, [loadCampaigns]);
+
+  const missingDraftCount = campaigns
+    ? trialMembers.filter((m) => !campaigns.find((c) => c.notes === trialTag(m.name))).length
+    : trialMembers.length;
+
+  const openMember = trialMembers.find((m) => m.name === openDraftFor);
+  const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === trialTag(openDraftFor)) : undefined;
+  const openEmail = openMember ? emailFor(openMember.name, openMember.email) : "";
+
+  const selectableNames = trialMembers
+    .filter((m) => {
+      const camp = campaigns?.find((c) => c.notes === trialTag(m.name));
+      return camp && camp.status === "Draft" && emailFor(m.name, m.email);
+    })
+    .map((m) => m.name);
+
+  function toggleSelected(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  if (trialMembers.length === 0) {
+    return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
+  }
+
+  return (
+    <>
+      <Card className="mb-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="font-semibold text-neutral-900">
+              {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}
+            </p>
+            <p className="text-sm text-neutral-500 mt-1">
+              Generate an upgrade-offer email per contact below (plus a first-class SMS), edit, then send.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <SendSelectedButton
+                campaigns={campaigns ?? []}
+                selectedNames={selected}
+                emailFor={emailFor}
+                tagFn={trialTag}
+                audienceFn={contactAudience}
+                onDone={async () => {
+                  setSelected(new Set());
+                  await loadCampaigns();
+                }}
+              />
+            )}
+            <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} onDone={loadCampaigns} />
+          </div>
+        </div>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-2 font-medium w-6"></th>
+              <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">Membership</th>
+              <th className="py-2 pr-4 font-medium">Conversion draft</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trialMembers.map((m, i) => {
+              const canSelect = selectableNames.includes(m.name);
+              return (
+                <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                  <td className="py-2.5 pr-2">
+                    {canSelect && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(m.name)}
+                        onChange={() => toggleSelected(m.name)}
+                        className="rounded border-neutral-300"
+                      />
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.membership}</td>
+                  <td className="py-2.5 pr-4 whitespace-nowrap">
+                    <TrialDraftCell
+                      name={m.name}
+                      hasEmail={!!emailFor(m.name, m.email)}
+                      campaign={campaigns?.find((c) => c.notes === trialTag(m.name))}
+                      onGenerated={loadCampaigns}
+                      onOpen={() => setOpenDraftFor(m.name)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {openDraftFor && openMember && openCampaign && (
+        <DraftModal
+          title={`Upgrade email for ${openMember.name}`}
+          subtitle="Trial Conversion"
+          subject={openCampaign.subject}
+          body={openCampaign.messageBody}
+          showSubject
+          statusLabel={openCampaign.status}
+          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
+          locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
+          onClose={() => setOpenDraftFor(null)}
+          onPoll={loadCampaigns}
+          onSave={async (subject, messageBody) => {
+            const res = await fetch("/api/campaigns", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+            });
+            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to save.");
+            await loadCampaigns();
+          }}
+          onSend={async () => {
+            const res = await fetch("/api/campaigns/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, audience: contactAudience(openMember.name, openEmail) }),
+            });
+            if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to send.");
+            await loadCampaigns();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+async function generateTrialDrafts(name: string): Promise<void> {
+  // Upgrade email — the one shown/edited/sent in the UI.
+  const emailRes = await fetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaignName: `Trial upgrade: ${name}`,
+      channel: "Email",
+      audience: "",
+      subject: personalize(TRIAL_UPGRADE_EMAIL_TEMPLATE.subject, name),
+      messageBody: personalize(TRIAL_UPGRADE_EMAIL_TEMPLATE.messageBody, name),
+      notes: trialTag(name),
+    }),
+  });
+  if (!emailRes.ok) throw new Error();
+
+  // First-class SMS — drafted alongside for Alex to review in Campaigns, not individually managed here.
+  await fetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaignName: `Trial first-class SMS: ${name}`,
+      channel: "SMS",
+      audience: "",
+      messageBody: personalize(TRIAL_SMS_TEMPLATE, name),
+      notes: `trial-sms:${name}`,
+    }),
+  });
+}
+
+function GenerateAllTrialButton({
+  members,
+  missingCount,
+  onDone,
+}: {
+  members: { name: string }[];
+  missingCount: number;
+  onDone: () => Promise<void>;
+}) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+
+  async function generateAll() {
+    setState("sending");
+    try {
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      const existing: Campaign[] = res.ok ? data.campaigns ?? [] : [];
+      const toDraft = members.filter((m) => !existing.find((c) => c.notes === trialTag(m.name)));
+      for (const m of toDraft) await generateTrialDrafts(m.name);
+      await onDone();
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  if (missingCount === 0) {
+    return <span className="text-sm font-medium text-neutral-500">All drafts generated</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={generateAll}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+      >
+        <Sparkles className="h-4 w-4" strokeWidth={2} />
+        {state === "sending" ? "Drafting…" : `Generate all (${missingCount})`}
+      </button>
+      {state === "error" && <p className="text-sm text-red-600">Something went wrong — try again.</p>}
+    </div>
+  );
+}
+
+function TrialDraftCell({
+  name,
+  hasEmail,
+  campaign,
+  onGenerated,
+  onOpen,
+}: {
+  name: string;
+  hasEmail: boolean;
+  campaign: Campaign | undefined;
+  onGenerated: () => Promise<void>;
+  onOpen: () => void;
+}) {
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(false);
+
+  if (!campaign) {
+    return (
+      <button
+        onClick={async () => {
+          setGenerating(true);
+          setError(false);
+          try {
+            await generateTrialDrafts(name);
+            await onGenerated();
+          } catch {
+            setError(true);
+          } finally {
+            setGenerating(false);
+          }
+        }}
+        disabled={generating}
+        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+      >
+        <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+        {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
+      </button>
+    );
+  }
+
+  const isNew = campaign.status === "Draft";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={onOpen}
+        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+        {isNew ? "New draft" : campaign.status}
+      </button>
+      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
     </div>
   );
 }
