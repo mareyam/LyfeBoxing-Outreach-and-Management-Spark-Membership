@@ -1467,67 +1467,118 @@ function PastDueDraftCell({
 // Payments
 // ---------------------------------------------------------------------------
 
+const PAYMENTS_MONTHS = 6;
+
 export function PaymentsView() {
   return (
     <div className="max-w-6xl">
-      <PageHeader title="Payments (Oct 1-25)" subtitle="All payment activity in the period." tool="Google Sheets (Payments)" />
-      <SheetGate tab="Payments (Oct 1-25)">{(rows) => <PaymentsTable rows={rows} />}</SheetGate>
+      <PageHeader title="Payments" subtitle="Payment activity for each of the past 6 months." tool="Google Sheets (Payments)" />
+      <SheetGate tab="Payments (Oct 1-25)">{(rows) => <PaymentsByMonth rows={rows} />}</SheetGate>
     </div>
   );
 }
 
-function PaymentsTable({ rows }: { rows: SheetRow[] }) {
-  const mapped = rows.map((r) => ({
-    date: findField(r, "date"),
-    memberName: findField(r, "member name", "name"),
-    status: findField(r, "status"),
-    item: findField(r, "item"),
-    paymentType: findField(r, "payment type"),
-    amountPaid: findField(r, "amount paid", "amount"),
-  }));
-  const total = mapped.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0);
-  const { pageItems, page, setPage, totalPages } = usePagination(mapped);
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+function monthLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function PaymentsByMonth({ rows }: { rows: SheetRow[] }) {
+  const mapped = useMemo(
+    () =>
+      rows.map((r) => ({
+        date: findField(r, "date"),
+        memberName: findField(r, "member name", "name"),
+        status: findField(r, "status"),
+        item: findField(r, "item"),
+        paymentType: findField(r, "payment type"),
+        amountPaid: findField(r, "amount paid", "amount"),
+      })),
+    [rows]
+  );
+
+  const months = useMemo(() => {
+    const now = new Date();
+    const list = [];
+    for (let i = 0; i < PAYMENTS_MONTHS; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = monthKey(d);
+      const monthRows = mapped.filter((p) => {
+        const parsed = parseSlashDate(p.date);
+        return parsed !== null && monthKey(parsed) === key;
+      });
+      const total = monthRows.reduce((sum, p) => sum + parseMoney(p.amountPaid), 0);
+      list.push({ key, label: monthLabel(d), rows: monthRows, total });
+    }
+    return list;
+  }, [mapped]);
 
   return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Stat label="Payments" value={mapped.length} />
-        <Stat label="Total collected" value={`$${total.toLocaleString()}`} />
-      </div>
-      {mapped.length === 0 ? (
-        <Card className="text-center py-10 text-sm text-neutral-500">No payments in this period yet.</Card>
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-neutral-400 border-b border-neutral-100">
-                <th className="py-2 pr-4 font-medium">Date</th>
-                <th className="py-2 pr-4 font-medium">Member</th>
-                <th className="py-2 pr-4 font-medium">Item</th>
-                <th className="py-2 pr-4 font-medium">Type</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((p, i) => (
-                <tr key={i} className="border-b border-neutral-50 last:border-0 align-top">
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.date || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.memberName || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{p.item || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.paymentType || "—"}</td>
-                  <td className="py-2.5 pr-4 whitespace-nowrap">
-                    <Badge>{p.status || "—"}</Badge>
-                  </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.amountPaid || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
-        </Card>
-      )}
-    </>
+    <div className="space-y-2">
+      {months.map((m, i) => (
+        <details key={m.key} open={i === 0} className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+          <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900">{m.label}</p>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                {m.rows.length} payment{m.rows.length === 1 ? "" : "s"} · ${m.total.toLocaleString()} collected
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
+          </summary>
+          <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
+            {m.rows.length === 0 ? (
+              <p className="text-sm text-neutral-400 py-4">No payments this month.</p>
+            ) : (
+              <MonthPaymentsTable rows={m.rows} />
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function MonthPaymentsTable({
+  rows,
+}: {
+  rows: { date: string; memberName: string; status: string; item: string; paymentType: string; amountPaid: string }[];
+}) {
+  const { pageItems, page, setPage, totalPages } = usePagination(rows);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-neutral-400 border-b border-neutral-100">
+            <th className="py-2 pr-4 font-medium">Date</th>
+            <th className="py-2 pr-4 font-medium">Member</th>
+            <th className="py-2 pr-4 font-medium">Item</th>
+            <th className="py-2 pr-4 font-medium">Type</th>
+            <th className="py-2 pr-4 font-medium">Status</th>
+            <th className="py-2 pr-4 font-medium">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pageItems.map((p, i) => (
+            <tr key={i} className="border-b border-neutral-50 last:border-0 align-top">
+              <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.date || "—"}</td>
+              <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.memberName || "—"}</td>
+              <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{p.item || "—"}</td>
+              <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{p.paymentType || "—"}</td>
+              <td className="py-2.5 pr-4 whitespace-nowrap">
+                <Badge>{p.status || "—"}</Badge>
+              </td>
+              <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.amountPaid || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
+    </div>
   );
 }
 
@@ -1670,9 +1721,16 @@ type Campaign = {
   smsBody: string;
 };
 
-const audienceOptions = [
-  "All active members",
+const STATUS_FILTER_OPTIONS = [
+  "Active members",
+  "Cancelled members",
   "Past due members",
+  "At risk (10+ days no class)",
+  "Trial members",
+];
+
+const MEMBERSHIP_FILTER_OPTIONS = [
+  "Any membership",
   "Basic Boxer 2x",
   "Knock Out Boxer Unlimited",
   "Light Boxer 1x",
@@ -1680,6 +1738,13 @@ const audienceOptions = [
   "1 Day Boxing Program",
   "Ignite Pro | Adult Boxing | 3-Class Trial for $19.95",
 ];
+
+/** Built from the two filters into the plain-English Audience text Grok resolves at send time. */
+function buildAudience(status: string, membership: string): string {
+  const parts = [status];
+  if (membership !== "Any membership") parts.push(`membership: ${membership}`);
+  return parts.join(" · ");
+}
 
 function personalCampaignName(notes: string): string {
   if (notes.startsWith("winback:")) return notes.slice("winback:".length);
@@ -1977,7 +2042,9 @@ export function CampaignsView() {
 function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
   const [campaignName, setCampaignName] = useState("");
   const [channel, setChannel] = useState<"Email" | "SMS" | "Both">("Email");
-  const [audience, setAudience] = useState(audienceOptions[0]);
+  const [statusFilter, setStatusFilter] = useState(STATUS_FILTER_OPTIONS[0]);
+  const [membershipFilter, setMembershipFilter] = useState(MEMBERSHIP_FILTER_OPTIONS[0]);
+  const audience = buildAudience(statusFilter, membershipFilter);
   const [subject, setSubject] = useState("");
   const [messageBody, setMessageBody] = useState("");
   const [smsBody, setSmsBody] = useState("");
@@ -2087,21 +2154,39 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
               <option value="Both">Both</option>
             </select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium text-neutral-700 block mb-1">Audience</label>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Status</label>
             <select
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
             >
-              {audienceOptions.map((a) => (
-                <option key={a} value={a}>
-                  {a}
+              {STATUS_FILTER_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Membership</label>
+            <select
+              value={membershipFilter}
+              onChange={(e) => setMembershipFilter(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            >
+              {MEMBERSHIP_FILTER_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
                 </option>
               ))}
             </select>
           </div>
         </div>
+        <p className="text-xs text-neutral-400 -mt-2">Audience: {audience}</p>
 
         <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 space-y-2">
           <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
@@ -2524,35 +2609,15 @@ function TrialDraftCell({
 
 // ---------------------------------------------------------------------------
 // At Risk / Upgrade Candidates — read the "Attendance" tab (Name, Membership,
-// Last Attended, Classes Last 30 Days). Shows a waiting state explaining how
-// that tab gets populated until it exists or has rows.
+// Last Attended, Classes Last 30 Days) just to show a live count, and offer
+// ONE filtered campaign per page (not a draft per contact) — Grok resolves
+// the actual recipient list from the Audience text when it sends.
 // ---------------------------------------------------------------------------
-
-function AttendanceEmptyCard({ title, body }: { title: string; body: string }) {
-  return (
-    <Card className="text-center py-12">
-      <AlertCircle className="h-8 w-8 text-neutral-300 mx-auto" strokeWidth={1.5} />
-      <p className="font-semibold text-neutral-900 mt-3">{title}</p>
-      <p className="text-sm text-neutral-500 mt-1 max-w-sm mx-auto">{body}</p>
-      <p className="text-xs text-neutral-400 mt-3 max-w-sm mx-auto">
-        Attendance isn&apos;t tracked in Spark&apos;s member export — Grok populates this tab from Spark&apos;s attendance report.
-      </p>
-    </Card>
-  );
-}
 
 function daysSince(dateStr: string): number | null {
   const d = parseSlashDate(dateStr);
   if (!d) return null;
   return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function atRiskTag(name: string): string {
-  return `atrisk:${name}`;
-}
-
-function upgradeTag(name: string): string {
-  return `upgrade:${name}`;
 }
 
 const AT_RISK_EMAIL_TEMPLATE = {
@@ -2569,85 +2634,30 @@ const UPGRADE_EMAIL_TEMPLATE = {
     "Hey {First name},\n\nYou've been putting in serious work lately — more classes than your current plan covers, honestly.\n\nUpgrading to Unlimited means you never have to think about it again. Want us to get that switched over for you?\n\nLyfe Boxing",
 };
 
-async function generateAtRiskDrafts(name: string): Promise<void> {
-  const emailRes = await fetch("/api/campaigns", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      campaignName: `At Risk: ${name}`,
-      channel: "Email",
-      audience: "",
-      subject: personalize(AT_RISK_EMAIL_TEMPLATE.subject, name),
-      messageBody: personalize(AT_RISK_EMAIL_TEMPLATE.messageBody, name),
-      notes: atRiskTag(name),
-    }),
-  });
-  if (!emailRes.ok) throw new Error();
-
-  await fetch("/api/campaigns", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      campaignName: `At Risk SMS: ${name}`,
-      channel: "SMS",
-      audience: "",
-      messageBody: personalize(AT_RISK_SMS_TEMPLATE, name),
-      notes: `atrisk-sms:${name}`,
-    }),
-  });
-}
-
-async function generateUpgradeDraft(name: string): Promise<void> {
-  const res = await fetch("/api/campaigns", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      campaignName: `Upgrade: ${name}`,
-      channel: "Email",
-      audience: "",
-      subject: personalize(UPGRADE_EMAIL_TEMPLATE.subject, name),
-      messageBody: personalize(UPGRADE_EMAIL_TEMPLATE.messageBody, name),
-      notes: upgradeTag(name),
-    }),
-  });
-  if (!res.ok) throw new Error();
-}
-
 export function AtRiskView() {
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-3xl">
       <PageHeader title="At Risk" subtitle="Members who haven't attended in 10+ days." tool="Google Sheets (Attendance) + Campaigns" />
       <SheetGate tab="Attendance">
         {(rows) => {
-          const members = rows
-            .map((r) => ({
-              name: findField(r, "name"),
-              email: findField(r, "email"),
-              membership: findField(r, "membership"),
-              lastAttended: findField(r, "last attended"),
-            }))
+          const count = rows
+            .map((r) => ({ name: findField(r, "name"), lastAttended: findField(r, "last attended") }))
             .filter((m) => m.name)
-            .map((m) => ({ ...m, daysSince: daysSince(m.lastAttended) }))
-            .filter((m) => m.daysSince !== null && m.daysSince >= 10);
-
-          if (members.length === 0) {
-            return (
-              <AttendanceEmptyCard
-                title="No one is at risk right now"
-                body="Everyone in the Attendance tab has been in within the last 10 days."
-              />
-            );
-          }
+            .map((m) => daysSince(m.lastAttended))
+            .filter((d) => d !== null && d >= 10).length;
 
           return (
-            <AttendanceDraftTable
-              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.daysSince} days since last class` }))}
-              detailLabel="Last attended"
-              tagFn={atRiskTag}
-              generateDraft={generateAtRiskDrafts}
-              pageLabel="member"
-              subtitleText={'Generate a "we miss you" email per contact below (plus an SMS), edit, then send.'}
-              modalTitlePrefix="We miss you email for"
+            <FilteredCampaignCard
+              tag="general:atrisk"
+              campaignName="At Risk outreach"
+              channel="Both"
+              audience="Status: At risk (10+ days no class)"
+              subject={AT_RISK_EMAIL_TEMPLATE.subject}
+              messageBody={AT_RISK_EMAIL_TEMPLATE.messageBody}
+              smsBody={AT_RISK_SMS_TEMPLATE}
+              description="One campaign, sent to everyone who hasn't attended a class in 10+ days — however many that is when it goes out."
+              countLabel={`${count} member${count === 1 ? "" : "s"} currently at risk`}
+              modalTitle="At Risk outreach"
               modalSubtitle="At Risk"
             />
           );
@@ -2659,7 +2669,7 @@ export function AtRiskView() {
 
 export function UpgradeCandidatesView() {
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-3xl">
       <PageHeader
         title="Upgrade Candidates"
         subtitle="Light Boxer 1x and Basic Boxer 2x members attending more than their plan allows."
@@ -2667,38 +2677,29 @@ export function UpgradeCandidatesView() {
       />
       <SheetGate tab="Attendance">
         {(rows) => {
-          const members = rows
+          const count = rows
             .map((r) => ({
-              name: findField(r, "name"),
-              email: findField(r, "email"),
               membership: findField(r, "membership"),
               classes30d: Number(findField(r, "classes last 30 days", "classes")) || 0,
             }))
-            .filter((m) => m.name)
             .filter(
               (m) =>
                 (m.membership === "Light Boxer 1x" && m.classes30d > 4) ||
                 (m.membership === "Basic Boxer 2x" && m.classes30d > 8)
-            );
-
-          if (members.length === 0) {
-            return (
-              <AttendanceEmptyCard
-                title="No upgrade candidates right now"
-                body="No Light Boxer 1x or Basic Boxer 2x member is over their monthly class allowance."
-              />
-            );
-          }
+            ).length;
 
           return (
-            <AttendanceDraftTable
-              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.classes30d} classes in 30 days (${m.membership})` }))}
-              detailLabel="Activity"
-              tagFn={upgradeTag}
-              generateDraft={generateUpgradeDraft}
-              pageLabel="candidate"
-              subtitleText="Generate an upgrade-to-Unlimited email per contact below, edit, then send."
-              modalTitlePrefix="Upgrade email for"
+            <FilteredCampaignCard
+              tag="general:upgrade"
+              campaignName="Upgrade candidates outreach"
+              channel="Email"
+              audience="Light Boxer 1x or Basic Boxer 2x members over their monthly class allowance"
+              subject={UPGRADE_EMAIL_TEMPLATE.subject}
+              messageBody={UPGRADE_EMAIL_TEMPLATE.messageBody}
+              smsBody=""
+              description="One campaign, sent to everyone currently over their plan's monthly class allowance."
+              countLabel={`${count} upgrade candidate${count === 1 ? "" : "s"} right now`}
+              modalTitle="Upgrade candidates outreach"
               modalSubtitle="Upgrade Candidates"
             />
           );
@@ -2708,33 +2709,42 @@ export function UpgradeCandidatesView() {
   );
 }
 
-/** Shared per-contact generate → edit → send table for At Risk and Upgrade Candidates. */
-function AttendanceDraftTable({
-  members,
-  detailLabel,
-  tagFn,
-  generateDraft,
-  pageLabel,
-  subtitleText,
-  modalTitlePrefix,
+/**
+ * One campaign for a whole filtered audience (not one draft per contact).
+ * The Audience text describes who it goes to; Grok resolves the actual
+ * recipient list from the sheet when the row is Queued.
+ */
+function FilteredCampaignCard({
+  tag,
+  campaignName,
+  channel,
+  audience,
+  subject,
+  messageBody,
+  smsBody,
+  description,
+  countLabel,
+  modalTitle,
   modalSubtitle,
 }: {
-  members: { name: string; email: string; detail: string }[];
-  detailLabel: string;
-  tagFn: (name: string) => string;
-  generateDraft: (name: string) => Promise<void>;
-  pageLabel: string;
-  subtitleText: string;
-  modalTitlePrefix: string;
+  tag: string;
+  campaignName: string;
+  channel: "Email" | "SMS" | "Both";
+  audience: string;
+  subject: string;
+  messageBody: string;
+  smsBody: string;
+  description: string;
+  countLabel: string;
+  modalTitle: string;
   modalSubtitle: string;
 }) {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
-  const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [generatingAll, setGeneratingAll] = useState(false);
-  const emailFor = useContactEmails();
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
-  const loadCampaigns = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch("/api/campaigns");
       const data = await res.json();
@@ -2746,175 +2756,95 @@ function AttendanceDraftTable({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
-    loadCampaigns();
-  }, [loadCampaigns]);
+    load();
+  }, [load]);
 
-  const missingDraftCount = campaigns ? members.filter((m) => !campaigns.find((c) => c.notes === tagFn(m.name))).length : members.length;
-  const anyQueued = !!campaigns?.some((c) => c.status === "Queued" && members.some((m) => c.notes === tagFn(m.name)));
-  usePollWhileQueued(anyQueued, loadCampaigns);
+  const campaign = campaigns?.find((c) => c.notes === tag);
+  usePollWhileQueued(campaign?.status === "Queued", load);
 
-  const openMember = members.find((m) => m.name === openDraftFor);
-  const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === tagFn(openDraftFor)) : undefined;
-  const openEmail = openMember ? emailFor(openMember.name, openMember.email) : "";
-
-  const selectableNames = members
-    .filter((m) => {
-      const camp = campaigns?.find((c) => c.notes === tagFn(m.name));
-      return camp && (camp.status === "Draft" || camp.status === "Error") && emailFor(m.name, m.email);
-    })
-    .map((m) => m.name);
-
-  function toggleSelected(name: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
-
-  async function generateAll() {
-    setGeneratingAll(true);
+  async function createCampaign() {
+    setCreating(true);
+    setError(null);
     try {
-      const res = await fetch("/api/campaigns");
-      const data = await res.json();
-      const existing: Campaign[] = res.ok ? data.campaigns ?? [] : [];
-      const toDraft = members.filter((m) => !existing.find((c) => c.notes === tagFn(m.name)));
-      for (const m of toDraft) await generateDraft(m.name);
-      await loadCampaigns();
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignName, channel, audience, subject, messageBody, smsBody, notes: tag }),
+      });
+      if (!res.ok) throw new Error(await apiError(res, "Failed to create campaign."));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create campaign.");
     } finally {
-      setGeneratingAll(false);
+      setCreating(false);
     }
   }
+
+  const isNew = campaign?.status === "Draft";
 
   return (
     <>
       <Card className="mb-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <p className="font-semibold text-neutral-900">
-              {members.length} {pageLabel}
-              {members.length === 1 ? "" : "s"}
-            </p>
-            <p className="text-sm text-neutral-500 mt-1">{subtitleText}</p>
+            <p className="font-semibold text-neutral-900">{countLabel}</p>
+            <p className="text-sm text-neutral-500 mt-1 max-w-md">{description}</p>
+            <p className="text-xs text-neutral-400 mt-2">Audience: {audience}</p>
           </div>
-          <div className="flex items-center gap-2">
-            {selected.size > 0 && (
-              <SendSelectedButton
-                campaigns={campaigns ?? []}
-                selectedNames={selected}
-                emailFor={emailFor}
-                tagFn={tagFn}
-                onDone={async () => {
-                  setSelected(new Set());
-                  await loadCampaigns();
-                }}
-              />
-            )}
-            {missingDraftCount === 0 ? (
-              <span className="text-sm font-medium text-neutral-500">All drafts generated</span>
-            ) : (
-              <button
-                onClick={generateAll}
-                disabled={generatingAll}
-                className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
-              >
-                <Sparkles className="h-4 w-4" strokeWidth={2} />
-                {generatingAll ? "Drafting…" : `Generate all (${missingDraftCount})`}
-              </button>
-            )}
-          </div>
+          {!campaign ? (
+            <button
+              onClick={createCampaign}
+              disabled={creating}
+              className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50 shrink-0"
+            >
+              <Sparkles className="h-4 w-4" strokeWidth={2} />
+              {creating ? "Drafting…" : "Draft campaign"}
+            </button>
+          ) : (
+            <button
+              onClick={() => setOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 shrink-0"
+            >
+              {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+              {isNew ? "New draft" : campaign.status}
+            </button>
+          )}
         </div>
+        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
       </Card>
 
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-2 font-medium w-6"></th>
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">{detailLabel}</th>
-              <th className="py-2 pr-4 font-medium">Draft</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m, i) => {
-              const canSelect = selectableNames.includes(m.name);
-              const campaign = campaigns?.find((c) => c.notes === tagFn(m.name));
-              const isNew = campaign?.status === "Draft";
-              return (
-                <tr key={`${m.name}-${i}`} className={`border-b border-neutral-50 last:border-0 align-top ${isNew ? "bg-amber-50/60" : ""}`}>
-                  <td className="py-2.5 pr-2">
-                    {canSelect && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(m.name)}
-                        onChange={() => toggleSelected(m.name)}
-                        className="rounded border-neutral-300"
-                      />
-                    )}
-                  </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.detail}</td>
-                  <td className="py-2.5 pr-4 whitespace-nowrap">
-                    {!campaign ? (
-                      <GenerateDraftButton name={m.name} generateDraft={generateDraft} onGenerated={loadCampaigns} />
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setOpenDraftFor(m.name)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-                        >
-                          {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-                          {isNew ? "New draft" : campaign.status}
-                        </button>
-                        {isNew && !emailFor(m.name, m.email) && (
-                          <span className="text-xs text-amber-600" title="No email on file">
-                            no email
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-
-      {openDraftFor && openMember && openCampaign && (
+      {open && campaign && (
         <DraftModal
-          title={`${modalTitlePrefix} ${openMember.name}`}
+          title={modalTitle}
           subtitle={modalSubtitle}
-          to={openEmail}
-          subject={openCampaign.subject}
-          body={openCampaign.messageBody}
-          showSubject
-          statusLabel={openCampaign.status}
-          sentAt={openCampaign.sentAt}
-          notes={openCampaign.notes}
-          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
-          locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
-          onClose={() => setOpenDraftFor(null)}
-          onPoll={loadCampaigns}
-          onSave={async (subject, messageBody) => {
+          subject={campaign.subject}
+          body={campaign.messageBody}
+          showSubject={campaign.channel !== "SMS"}
+          smsBody={campaign.smsBody}
+          showSms={campaign.channel !== "Email"}
+          statusLabel={campaign.status}
+          sentAt={campaign.sentAt}
+          notes={campaign.notes}
+          locked={campaign.status === "Sending" || campaign.status === "Sent" || campaign.status === "Queued"}
+          onClose={() => setOpen(false)}
+          onPoll={load}
+          onSave={async (subjectVal, messageBodyVal, smsBodyVal) => {
             const res = await fetch("/api/campaigns", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+              body: JSON.stringify({ row: campaign.row, subject: subjectVal, messageBody: messageBodyVal, smsBody: smsBodyVal }),
             });
             if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
-            await loadCampaigns();
+            await load();
           }}
-          onSend={async (subject, messageBody) => {
+          onSend={async (subjectVal, messageBodyVal, smsBodyVal) => {
             const res = await fetch("/api/campaigns/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+              body: JSON.stringify({ row: campaign.row, subject: subjectVal, messageBody: messageBodyVal, smsBody: smsBodyVal }),
             });
             const message = res.ok ? null : await apiError(res, "Failed to send.");
-            await loadCampaigns();
+            await load();
             if (message) throw new Error(message);
           }}
         />
@@ -2923,44 +2853,18 @@ function AttendanceDraftTable({
   );
 }
 
-function GenerateDraftButton({
-  name,
-  generateDraft,
-  onGenerated,
-}: {
-  name: string;
-  generateDraft: (name: string) => Promise<void>;
-  onGenerated: () => Promise<void>;
-}) {
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState(false);
-
-  return (
-    <button
-      onClick={async () => {
-        setGenerating(true);
-        setError(false);
-        try {
-          await generateDraft(name);
-          await onGenerated();
-        } catch {
-          setError(true);
-        } finally {
-          setGenerating(false);
-        }
-      }}
-      disabled={generating}
-      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-    >
-      <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-      {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Weekly Summary
 // ---------------------------------------------------------------------------
+
+const WEEKLY_SUMMARY_WEEKS = 26; // ~6 months
+
+function formatWeekLabel(start: number, end: number): string {
+  const startStr = new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const endStr = new Date(end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${startStr} – ${endStr}`;
+}
 
 export function WeeklySummaryView() {
   const memberships = useSheetTab("All Memberships");
@@ -2982,12 +2886,12 @@ export function WeeklySummaryView() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Weekly Summary" subtitle="A clean, screenshot-ready recap to send to Alex." />
+      <PageHeader title="Weekly Summary" subtitle="A week-by-week recap for the past 6 months, screenshot-ready to send to Alex." />
       {loading && <LoadingCard />}
       {!loading && notConfigured && <SetupNeeded />}
       {!loading && !notConfigured && firstError && firstError.status === "error" && <SheetErrorCard message={firstError.message} />}
       {!loading && !notConfigured && !firstError && (
-        <WeeklySummaryCard
+        <WeeklySummaryList
           membershipRows={memberships.state.status === "ok" ? memberships.state.rows : []}
           cancelledRows={cancelled.state.status === "ok" ? cancelled.state.rows : []}
           pastDueRows={pastDue.state.status === "ok" ? pastDue.state.rows : []}
@@ -2999,7 +2903,7 @@ export function WeeklySummaryView() {
   );
 }
 
-function WeeklySummaryCard({
+function WeeklySummaryList({
   membershipRows,
   cancelledRows,
   pastDueRows,
@@ -3012,67 +2916,77 @@ function WeeklySummaryCard({
   paymentRows: SheetRow[];
   campaigns: Campaign[];
 }) {
-  // Captured once on mount — a static reference point for "within the last 7 days".
+  // Captured once on mount — a static reference point for the week windows.
   const [now] = useState(() => Date.now());
-  const withinWeek = useMemo(() => (d: Date | null) => d !== null && now - d.getTime() <= 7 * 86_400_000, [now]);
-
-  const newMembers = useMemo(
-    () => membershipRows.filter((m) => withinWeek(parseSlashDate(findField(m, "signed")))).length,
-    [membershipRows, withinWeek]
-  );
-  const cancellationsThisWeek = useMemo(
-    () => cancelledRows.filter((c) => withinWeek(parseSlashDate(findField(c, "cancelled date", "cancelled")))).length,
-    [cancelledRows, withinWeek]
-  );
-  const revenue = useMemo(
-    () =>
-      paymentRows
-        .filter((p) => withinWeek(parseSlashDate(findField(p, "date"))))
-        .reduce((sum, p) => sum + parseMoney(findField(p, "amount paid", "amount")), 0),
-    [paymentRows, withinWeek]
-  );
   const pastDueTotal = useMemo(() => pastDueRows.reduce((sum, p) => sum + parseMoney(findField(p, "total overdue")), 0), [pastDueRows]);
-  const campaignsSentThisWeek = useMemo(
-    () => campaigns.filter((c) => (c.status === "Sent" || c.status === "Queued") && withinWeek(parseSlashDate(c.sentAt))),
-    [campaigns, withinWeek]
-  );
+
+  const weeks = useMemo(() => {
+    const list = [];
+    for (let i = 0; i < WEEKLY_SUMMARY_WEEKS; i++) {
+      const end = now - i * 7 * 86_400_000;
+      const start = end - 7 * 86_400_000;
+      const inRange = (d: Date | null) => d !== null && d.getTime() > start && d.getTime() <= end;
+
+      const newMembers = membershipRows.filter((m) => inRange(parseSlashDate(findField(m, "signed")))).length;
+      const cancellations = cancelledRows.filter((c) => inRange(parseSlashDate(findField(c, "cancelled date", "cancelled")))).length;
+      const revenue = paymentRows
+        .filter((p) => inRange(parseSlashDate(findField(p, "date"))))
+        .reduce((sum, p) => sum + parseMoney(findField(p, "amount paid", "amount")), 0);
+      const campaignsSent = campaigns.filter((c) => (c.status === "Sent" || c.status === "Queued") && inRange(parseSlashDate(c.sentAt)));
+
+      list.push({ start, end, newMembers, cancellations, revenue, campaignsSent });
+    }
+    return list;
+  }, [now, membershipRows, cancelledRows, paymentRows, campaigns]);
 
   return (
-    <Card>
-      <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">
-        Week ending {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-      </p>
-      <p className="text-xl font-semibold text-neutral-900 mt-1">Lyfe Boxing — Weekly Summary</p>
+    <div>
+      <Card className="mb-4">
+        <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">As of today</p>
+        <div className="grid grid-cols-2 gap-4 mt-3">
+          <Stat label="Past due total" value={`$${pastDueTotal.toLocaleString()}`} />
+          <Stat label="Members past due" value={pastDueRows.length} />
+        </div>
+      </Card>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-5">
-        <Stat label="New members" value={newMembers} />
-        <Stat label="Cancellations" value={cancellationsThisWeek} />
-        <Stat label="Revenue (period)" value={`$${revenue.toLocaleString()}`} />
-        <Stat label="Past due total" value={`$${pastDueTotal.toLocaleString()}`} />
-        <Stat label="Members past due" value={pastDueRows.length} />
-        <Stat label="Campaigns sent" value={campaignsSentThisWeek.length} />
+      <div className="space-y-2">
+        {weeks.map((w, i) => (
+          <details key={w.start} open={i === 0} className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+            <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">{formatWeekLabel(w.start, w.end)}</p>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  {w.newMembers} new · {w.cancellations} cancelled · ${w.revenue.toLocaleString()} revenue
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
+            </summary>
+            <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <Stat label="New members" value={w.newMembers} />
+                <Stat label="Cancellations" value={w.cancellations} />
+                <Stat label="Revenue" value={`$${w.revenue.toLocaleString()}`} />
+                <Stat label="Campaigns sent" value={w.campaignsSent.length} />
+              </div>
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent</p>
+                {w.campaignsSent.length === 0 ? (
+                  <p className="text-sm text-neutral-400">None.</p>
+                ) : (
+                  <ul className="text-sm text-neutral-600 space-y-1">
+                    {w.campaignsSent.map((c) => (
+                      <li key={c.row}>
+                        {c.campaignName} ({c.channel}) — {c.status}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </details>
+        ))}
       </div>
-
-      <div className="mt-6 pt-5 border-t border-neutral-100">
-        <p className="text-sm font-semibold text-neutral-900 mb-2">Top at-risk members</p>
-        <p className="text-sm text-neutral-400">Add the Attendance tab to see this.</p>
-      </div>
-
-      <div className="mt-6 pt-5 border-t border-neutral-100">
-        <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent this week</p>
-        {campaignsSentThisWeek.length === 0 ? (
-          <p className="text-sm text-neutral-400">None yet.</p>
-        ) : (
-          <ul className="text-sm text-neutral-600 space-y-1">
-            {campaignsSentThisWeek.map((c) => (
-              <li key={c.row}>
-                {c.campaignName} ({c.channel}) — {c.status}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </Card>
+    </div>
   );
 }
 
