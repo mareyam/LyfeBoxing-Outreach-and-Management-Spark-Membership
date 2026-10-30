@@ -10,15 +10,16 @@ export async function POST(req: NextRequest) {
     const row = Number(body?.row);
     const subject: string | undefined = body?.subject;
     const messageBody: string | undefined = body?.messageBody;
+    const smsBody: string | undefined = body?.smsBody;
 
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
     }
 
-    const { kind } = await prepareCampaignSend({ row, subject, messageBody });
+    const { kind, channel, smsBody: queuedSmsBody } = await prepareCampaignSend({ row, subject, messageBody, smsBody });
 
     try {
-      await notifyGrok({ tab: "Campaigns", rows: [row], kind });
+      await notifyGrok({ tab: "Campaigns", rows: [row], kind, channel, smsBody: queuedSmsBody });
     } catch (err) {
       return webhookErrorResponse(err);
     }

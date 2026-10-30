@@ -23,7 +23,8 @@ export async function prepareCampaignSend(input: {
   row: number;
   subject?: string;
   messageBody?: string;
-}): Promise<{ notes: string; kind: "winback" | "trial" | "campaign" }> {
+  smsBody?: string;
+}): Promise<{ notes: string; kind: "winback" | "trial" | "campaign"; channel: string; smsBody: string }> {
   const draft = await getCampaignDraft(input.row);
   if (!draft.campaignName.trim()) {
     throw new Error(`Row ${input.row} is empty.`);
@@ -49,16 +50,22 @@ export async function prepareCampaignSend(input: {
 
   const messageBody = input.messageBody ?? draft.messageBody;
   const subject = input.subject ?? draft.subject;
-  if (!messageBody.trim()) {
+  const smsBody = input.smsBody ?? draft.smsBody;
+  const needsEmail = draft.channel !== "SMS";
+  const needsSms = draft.channel === "SMS" || draft.channel === "Both";
+  if (needsEmail && !messageBody.trim()) {
     throw new Error("Message is required.");
+  }
+  if (needsSms && !smsBody.trim()) {
+    throw new Error("SMS text is required.");
   }
 
   // Already-queued rows are a re-notify: don't rewrite the draft, but do
   // fill in a missing single-contact audience before Grok looks again.
   if (status === "Draft" || status === "Error") {
-    await updateCampaignContent(input.row, { subject, messageBody });
+    await updateCampaignContent(input.row, { subject, messageBody, smsBody });
   }
 
   await markCampaignQueued(input.row, audience);
-  return { notes: draft.notes, kind };
+  return { notes: draft.notes, kind, channel: draft.channel, smsBody };
 }

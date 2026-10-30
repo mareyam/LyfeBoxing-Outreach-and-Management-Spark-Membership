@@ -18,7 +18,6 @@ const lyfeBoxingLinks = [
   { href: "/lyfe-boxing/payments", label: "Payments (Oct 1-25)" },
   { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
   { href: "/lyfe-boxing/contacts", label: "Contacts" },
-  { href: "/lyfe-boxing/reports", label: "Reports Index" },
   { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion" },
   { href: "/lyfe-boxing/at-risk", label: "At Risk" },
   { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates" },

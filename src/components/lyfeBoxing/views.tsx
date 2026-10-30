@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Mail, MessageSquare, Plus, Send, Sparkles, X } from "lucide-react";
-import { reportsIndex } from "@/lib/lyfeBoxingReports";
 import { Badge, Card, PageHeader, Stat } from "@/components/ui";
 
 const PAGE_SIZE = 20;
@@ -87,6 +87,8 @@ export function DraftModal({
   subject,
   body,
   showSubject,
+  smsBody,
+  showSms,
   locked,
   statusLabel,
   sentAt,
@@ -104,26 +106,31 @@ export function DraftModal({
   subject: string;
   body: string;
   showSubject: boolean;
+  /** SMS text for a channel that also/only sends SMS (Campaigns' "Both"/"SMS"). */
+  smsBody?: string;
+  showSms?: boolean;
   locked: boolean;
   statusLabel?: string;
   sentAt?: string;
   notes?: string;
   sendDisabledReason?: string;
   onClose: () => void;
-  onSave: (subject: string, body: string) => Promise<void>;
-  onSend: (subject: string, body: string) => Promise<void>;
+  onSave: (subject: string, body: string, smsBody?: string) => Promise<void>;
+  onSend: (subject: string, body: string, smsBody?: string) => Promise<void>;
   /** Called every 15s while statusLabel === "Queued" so the modal picks up Grok's Sent/Error update. */
   onPoll?: () => Promise<void>;
 }) {
   const [editSubject, setEditSubject] = useState(subject);
   const [editBody, setEditBody] = useState(body);
+  const [editSmsBody, setEditSmsBody] = useState(smsBody ?? "");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirmingSend, setConfirmingSend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const dirty = editSubject !== subject || editBody !== body;
+  const dirty = editSubject !== subject || editBody !== body || (showSms && editSmsBody !== (smsBody ?? ""));
+  const overSmsLimit = showSms && editSmsBody.length > 160;
 
   useEffect(() => {
     if (statusLabel !== "Queued" || !onPoll) return;
@@ -137,7 +144,7 @@ export function DraftModal({
     setSaving(true);
     setError(null);
     try {
-      await onSave(editSubject, editBody);
+      await onSave(editSubject, editBody, showSms ? editSmsBody : undefined);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -151,7 +158,7 @@ export function DraftModal({
     setSending(true);
     setError(null);
     try {
-      await onSend(editSubject, editBody);
+      await onSend(editSubject, editBody, showSms ? editSmsBody : undefined);
       setConfirmingSend(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to send.");
@@ -194,8 +201,14 @@ export function DraftModal({
                 <p className="text-sm text-neutral-800">{subject || "(no subject)"}</p>
               </div>
             )}
-            <p className="text-xs text-neutral-400 mb-1">Message</p>
-            <p className="text-sm text-neutral-700 whitespace-pre-line leading-relaxed">{body}</p>
+            {body && <p className="text-xs text-neutral-400 mb-1">{showSms ? "Email" : "Message"}</p>}
+            {body && <p className="text-sm text-neutral-700 whitespace-pre-line leading-relaxed">{body}</p>}
+            {showSms && (
+              <div className={body ? "mt-3" : ""}>
+                <p className="text-xs text-neutral-400 mb-1">SMS</p>
+                <p className="text-sm text-neutral-700 whitespace-pre-line leading-relaxed">{smsBody || "(no SMS text)"}</p>
+              </div>
+            )}
             {sentAt && <p className="text-xs text-neutral-500 mt-4">Sent at {sentAt}</p>}
             {(statusLabel === "Sent" || statusLabel === "Error") && notes && (
               <p className="text-sm text-neutral-600 mt-2 whitespace-pre-line">Notes: {notes}</p>
@@ -226,15 +239,35 @@ export function DraftModal({
                 />
               </div>
             )}
-            <div>
-              <label className="text-xs font-medium text-neutral-500 block mb-1">Message</label>
-              <textarea
-                rows={8}
-                value={editBody}
-                onChange={(e) => setEditBody(e.target.value)}
-                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-              />
-            </div>
+            {(body || !showSms || showSubject) && (
+              <div>
+                <label className="text-xs font-medium text-neutral-500 block mb-1">{showSms ? "Email" : "Message"}</label>
+                <textarea
+                  rows={8}
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+                />
+              </div>
+            )}
+
+            {showSms && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-neutral-500">SMS</label>
+                  <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>
+                    {editSmsBody.length} / 160
+                  </span>
+                </div>
+                <textarea
+                  rows={4}
+                  value={editSmsBody}
+                  onChange={(e) => setEditSmsBody(e.target.value)}
+                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+                />
+                {overSmsLimit && <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>}
+              </div>
+            )}
 
             {error && <p className="text-sm text-red-600">{error}</p>}
             {!dirty && sendDisabledReason && <p className="text-sm text-amber-700">{sendDisabledReason}</p>}
@@ -251,7 +284,7 @@ export function DraftModal({
               {!confirmingSend ? (
                 <button
                   onClick={() => setConfirmingSend(true)}
-                  disabled={!!sendDisabledReason}
+                  disabled={!!sendDisabledReason || overSmsLimit}
                   title={sendDisabledReason}
                   className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-40"
                 >
@@ -489,6 +522,19 @@ export function MembershipsView() {
   return (
     <div className="max-w-6xl">
       <PageHeader title="All Memberships" subtitle="Live roster from the Spark Memberships sheet." tool="Google Sheets (All Memberships)" />
+      <Link href="/lyfe-boxing/playbook" className="group block mb-6">
+        <Card className="group-hover:border-neutral-300 transition-colors">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-semibold text-neutral-900">Playbook</p>
+              <p className="text-sm text-neutral-500 mt-1">
+                Tone, offers, prices, and FAQs that every AI-drafted message pulls from.
+              </p>
+            </div>
+            <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900 whitespace-nowrap">Edit →</span>
+          </div>
+        </Card>
+      </Link>
       <SheetGate tab="All Memberships">{(rows) => <MembershipsTable rows={rows} />}</SheetGate>
     </div>
   );
@@ -1607,41 +1653,6 @@ function ContactsList({ rows }: { rows: SheetRow[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Reports Index (static — just links into Spark's own reports, no member data)
-// ---------------------------------------------------------------------------
-
-export function ReportsView() {
-  const sections = useMemo(() => {
-    const bySection = new Map<string, typeof reportsIndex>();
-    for (const r of reportsIndex) {
-      if (!bySection.has(r.section)) bySection.set(r.section, []);
-      bySection.get(r.section)!.push(r);
-    }
-    return Array.from(bySection.entries());
-  }, []);
-
-  return (
-    <div className="max-w-4xl">
-      <PageHeader title="Reports Index" subtitle="Links into Spark's own report pages." />
-      <div className="space-y-6">
-        {sections.map(([section, items]) => (
-          <div key={section}>
-            <p className="text-sm font-semibold text-neutral-900 mb-2">{section}</p>
-            <Card className="divide-y divide-neutral-100">
-              {items.map((r) => (
-                <div key={r.urlPath} className="py-2 text-sm text-neutral-600">
-                  {r.name}
-                </div>
-              ))}
-            </Card>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Campaigns
 // ---------------------------------------------------------------------------
 
@@ -1656,6 +1667,7 @@ type Campaign = {
   recipients: string;
   sentAt: string;
   notes: string;
+  smsBody: string;
 };
 
 const audienceOptions = [
@@ -1867,8 +1879,13 @@ export function CampaignsView() {
                       {c.channel} · {c.audience || "No audience yet"}
                       {c.recipients && ` · ${c.recipients} recipients`}
                     </p>
-                    {c.channel === "Email" && c.subject && <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>}
-                    <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">{c.messageBody}</p>
+                    {c.channel !== "SMS" && c.subject && <p className="text-sm text-neutral-400 mt-1">Subject: {c.subject}</p>}
+                    {c.channel !== "SMS" && c.messageBody && (
+                      <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">{c.messageBody}</p>
+                    )}
+                    {c.channel !== "Email" && c.smsBody && (
+                      <p className="text-sm text-neutral-600 mt-2 max-w-xl break-words">SMS: {c.smsBody}</p>
+                    )}
                     {c.sentAt && <p className="text-xs text-neutral-400 mt-2">Sent at {c.sentAt}</p>}
                     {(c.status === "Sent" || c.status === "Error") && c.notes && (
                       <p className="text-xs text-neutral-500 mt-1">Notes: {c.notes}</p>
@@ -1919,6 +1936,8 @@ export function CampaignsView() {
           subject={openCampaign.subject}
           body={openCampaign.messageBody}
           showSubject={openCampaign.channel !== "SMS"}
+          smsBody={openCampaign.smsBody}
+          showSms={openCampaign.channel !== "Email"}
           statusLabel={openCampaign.status || "Draft"}
           sentAt={openCampaign.sentAt}
           notes={openCampaign.notes}
@@ -1930,20 +1949,20 @@ export function CampaignsView() {
           locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
           onClose={() => setOpenRow(null)}
           onPoll={load}
-          onSave={async (subject, messageBody) => {
+          onSave={async (subject, messageBody, smsBody) => {
             const res = await fetch("/api/campaigns", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody, smsBody }),
             });
             if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
             await load();
           }}
-          onSend={async (subject, messageBody) => {
+          onSend={async (subject, messageBody, smsBody) => {
             const res = await fetch("/api/campaigns/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody, smsBody }),
             });
             const message = res.ok ? null : await apiError(res, "Failed to send.");
             await load();
@@ -1957,18 +1976,21 @@ export function CampaignsView() {
 
 function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
   const [campaignName, setCampaignName] = useState("");
-  const [channel, setChannel] = useState<"Email" | "SMS">("Email");
+  const [channel, setChannel] = useState<"Email" | "SMS" | "Both">("Email");
   const [audience, setAudience] = useState(audienceOptions[0]);
   const [subject, setSubject] = useState("");
   const [messageBody, setMessageBody] = useState("");
+  const [smsBody, setSmsBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brief, setBrief] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
 
-  const smsLength = messageBody.length;
-  const overSmsLimit = channel === "SMS" && smsLength > 145;
+  const showEmail = channel === "Email" || channel === "Both";
+  const showSms = channel === "SMS" || channel === "Both";
+  const smsLength = smsBody.length;
+  const overSmsLimit = showSms && smsLength > 160;
 
   async function handleGenerate() {
     if (!brief.trim()) {
@@ -1990,6 +2012,7 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
       }
       if (data.subject) setSubject(data.subject);
       if (data.body) setMessageBody(data.body);
+      if (data.smsBody) setSmsBody(data.smsBody);
       if (!campaignName.trim()) setCampaignName(brief.slice(0, 60));
     } catch {
       setGenError("Couldn't generate a draft.");
@@ -2001,12 +2024,20 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (channel === "Email" && !subject.trim()) {
+    if (showEmail && !subject.trim()) {
       setError("Subject is required for email campaigns.");
       return;
     }
+    if (showEmail && !messageBody.trim()) {
+      setError("Message body is required for email campaigns.");
+      return;
+    }
+    if (showSms && !smsBody.trim()) {
+      setError("SMS message is required for SMS campaigns.");
+      return;
+    }
     if (overSmsLimit) {
-      setError(`SMS message is ${smsLength} characters — keep it under 145.`);
+      setError(`SMS message is ${smsLength} characters — keep it under 160.`);
       return;
     }
     setSubmitting(true);
@@ -2014,7 +2045,7 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaignName, channel, audience, subject, messageBody }),
+        body: JSON.stringify({ campaignName, channel, audience, subject, messageBody, smsBody }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -2048,11 +2079,12 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
             <label className="text-sm font-medium text-neutral-700 block mb-1">Channel</label>
             <select
               value={channel}
-              onChange={(e) => setChannel(e.target.value as "Email" | "SMS")}
+              onChange={(e) => setChannel(e.target.value as "Email" | "SMS" | "Both")}
               className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
             >
               <option value="Email">Email</option>
               <option value="SMS">SMS</option>
+              <option value="Both">Both</option>
             </select>
           </div>
           <div>
@@ -2092,7 +2124,7 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
           {genError && <p className="text-sm text-red-600">{genError}</p>}
         </div>
 
-        {channel === "Email" && (
+        {showEmail && (
           <div>
             <label className="text-sm font-medium text-neutral-700 block mb-1">Subject</label>
             <input
@@ -2104,23 +2136,39 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
           </div>
         )}
 
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-neutral-700">Message body</label>
-            <span className="text-xs text-neutral-400">Use {"{First name}"} for personalization</span>
-            {channel === "SMS" && (
-              <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>{smsLength} / 145</span>
-            )}
+        {showEmail && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-neutral-700">Email body</label>
+              <span className="text-xs text-neutral-400">Use {"{First name}"} for personalization</span>
+            </div>
+            <textarea
+              required
+              rows={5}
+              value={messageBody}
+              onChange={(e) => setMessageBody(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            />
           </div>
-          <textarea
-            required
-            rows={5}
-            value={messageBody}
-            onChange={(e) => setMessageBody(e.target.value)}
-            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-          />
-          {overSmsLimit && <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>}
-        </div>
+        )}
+
+        {showSms && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-neutral-700">SMS message</label>
+              <span className={`text-xs ${overSmsLimit ? "text-red-600 font-medium" : "text-neutral-400"}`}>{smsLength} / 160</span>
+            </div>
+            <textarea
+              required
+              rows={3}
+              value={smsBody}
+              onChange={(e) => setSmsBody(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              placeholder="Use {First name} for personalization"
+            />
+            {overSmsLimit && <p className="text-xs text-red-600 mt-1">This will send as more than one SMS segment.</p>}
+          </div>
+        )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -2475,46 +2523,438 @@ function TrialDraftCell({
 }
 
 // ---------------------------------------------------------------------------
-// At Risk / Upgrade Candidates — depend on an "Attendance" tab that doesn't
-// exist in the sheet yet (Name, Membership, Last Attended, Classes Last 30
-// Days). These stay as empty states until that tab is added.
+// At Risk / Upgrade Candidates — read the "Attendance" tab (Name, Membership,
+// Last Attended, Classes Last 30 Days). Shows a waiting state explaining how
+// that tab gets populated until it exists or has rows.
 // ---------------------------------------------------------------------------
 
-function AttendanceWaitingCard({ title, body }: { title: string; body: string }) {
+function AttendanceEmptyCard({ title, body }: { title: string; body: string }) {
   return (
     <Card className="text-center py-12">
       <AlertCircle className="h-8 w-8 text-neutral-300 mx-auto" strokeWidth={1.5} />
       <p className="font-semibold text-neutral-900 mt-3">{title}</p>
       <p className="text-sm text-neutral-500 mt-1 max-w-sm mx-auto">{body}</p>
+      <p className="text-xs text-neutral-400 mt-3 max-w-sm mx-auto">
+        Attendance isn&apos;t tracked in Spark&apos;s member export — Grok populates this tab from Spark&apos;s attendance report.
+      </p>
     </Card>
   );
 }
 
+function daysSince(dateStr: string): number | null {
+  const d = parseSlashDate(dateStr);
+  if (!d) return null;
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function atRiskTag(name: string): string {
+  return `atrisk:${name}`;
+}
+
+function upgradeTag(name: string): string {
+  return `upgrade:${name}`;
+}
+
+const AT_RISK_EMAIL_TEMPLATE = {
+  subject: "We miss you at Lyfe Boxing, {First name}",
+  messageBody:
+    "Hey {First name},\n\nWe noticed you haven't been in for a bit and wanted to check in — everything okay?\n\nYour spot's still here whenever you're ready to get back in the gym. Let us know if there's anything we can do to help you get back on track.\n\nLyfe Boxing",
+};
+
+const AT_RISK_SMS_TEMPLATE = "Hey {First name}, we miss you at Lyfe Boxing! Come back in for a class whenever you're ready.";
+
+const UPGRADE_EMAIL_TEMPLATE = {
+  subject: "You're training more than your plan covers, {First name}",
+  messageBody:
+    "Hey {First name},\n\nYou've been putting in serious work lately — more classes than your current plan covers, honestly.\n\nUpgrading to Unlimited means you never have to think about it again. Want us to get that switched over for you?\n\nLyfe Boxing",
+};
+
+async function generateAtRiskDrafts(name: string): Promise<void> {
+  const emailRes = await fetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaignName: `At Risk: ${name}`,
+      channel: "Email",
+      audience: "",
+      subject: personalize(AT_RISK_EMAIL_TEMPLATE.subject, name),
+      messageBody: personalize(AT_RISK_EMAIL_TEMPLATE.messageBody, name),
+      notes: atRiskTag(name),
+    }),
+  });
+  if (!emailRes.ok) throw new Error();
+
+  await fetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaignName: `At Risk SMS: ${name}`,
+      channel: "SMS",
+      audience: "",
+      messageBody: personalize(AT_RISK_SMS_TEMPLATE, name),
+      notes: `atrisk-sms:${name}`,
+    }),
+  });
+}
+
+async function generateUpgradeDraft(name: string): Promise<void> {
+  const res = await fetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaignName: `Upgrade: ${name}`,
+      channel: "Email",
+      audience: "",
+      subject: personalize(UPGRADE_EMAIL_TEMPLATE.subject, name),
+      messageBody: personalize(UPGRADE_EMAIL_TEMPLATE.messageBody, name),
+      notes: upgradeTag(name),
+    }),
+  });
+  if (!res.ok) throw new Error();
+}
+
 export function AtRiskView() {
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       <PageHeader title="At Risk" subtitle="Members who haven't attended in 10+ days." tool="Google Sheets (Attendance) + Campaigns" />
-      <AttendanceWaitingCard
-        title={`Waiting on the "Attendance" tab`}
-        body={`Once Attendance (Name, Membership, Last Attended, Classes Last 30 Days) is added to the sheet, this page will list anyone who hasn't attended in 10+ days and let you draft a "we miss you" SMS and email for them.`}
-      />
+      <SheetGate tab="Attendance">
+        {(rows) => {
+          const members = rows
+            .map((r) => ({
+              name: findField(r, "name"),
+              email: findField(r, "email"),
+              membership: findField(r, "membership"),
+              lastAttended: findField(r, "last attended"),
+            }))
+            .filter((m) => m.name)
+            .map((m) => ({ ...m, daysSince: daysSince(m.lastAttended) }))
+            .filter((m) => m.daysSince !== null && m.daysSince >= 10);
+
+          if (members.length === 0) {
+            return (
+              <AttendanceEmptyCard
+                title="No one is at risk right now"
+                body="Everyone in the Attendance tab has been in within the last 10 days."
+              />
+            );
+          }
+
+          return (
+            <AttendanceDraftTable
+              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.daysSince} days since last class` }))}
+              detailLabel="Last attended"
+              tagFn={atRiskTag}
+              generateDraft={generateAtRiskDrafts}
+              pageLabel="member"
+              subtitleText={'Generate a "we miss you" email per contact below (plus an SMS), edit, then send.'}
+              modalTitlePrefix="We miss you email for"
+              modalSubtitle="At Risk"
+            />
+          );
+        }}
+      </SheetGate>
     </div>
   );
 }
 
 export function UpgradeCandidatesView() {
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       <PageHeader
         title="Upgrade Candidates"
         subtitle="Light Boxer 1x and Basic Boxer 2x members attending more than their plan allows."
         tool="Google Sheets (Attendance) + Campaigns"
       />
-      <AttendanceWaitingCard
-        title={`Waiting on the "Attendance" tab`}
-        body="Once Attendance has Classes Last 30 Days, this page will flag Light Boxer 1x / Basic Boxer 2x members over their monthly allowance and let you draft an upgrade-to-Unlimited email."
-      />
+      <SheetGate tab="Attendance">
+        {(rows) => {
+          const members = rows
+            .map((r) => ({
+              name: findField(r, "name"),
+              email: findField(r, "email"),
+              membership: findField(r, "membership"),
+              classes30d: Number(findField(r, "classes last 30 days", "classes")) || 0,
+            }))
+            .filter((m) => m.name)
+            .filter(
+              (m) =>
+                (m.membership === "Light Boxer 1x" && m.classes30d > 4) ||
+                (m.membership === "Basic Boxer 2x" && m.classes30d > 8)
+            );
+
+          if (members.length === 0) {
+            return (
+              <AttendanceEmptyCard
+                title="No upgrade candidates right now"
+                body="No Light Boxer 1x or Basic Boxer 2x member is over their monthly class allowance."
+              />
+            );
+          }
+
+          return (
+            <AttendanceDraftTable
+              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.classes30d} classes in 30 days (${m.membership})` }))}
+              detailLabel="Activity"
+              tagFn={upgradeTag}
+              generateDraft={generateUpgradeDraft}
+              pageLabel="candidate"
+              subtitleText="Generate an upgrade-to-Unlimited email per contact below, edit, then send."
+              modalTitlePrefix="Upgrade email for"
+              modalSubtitle="Upgrade Candidates"
+            />
+          );
+        }}
+      </SheetGate>
     </div>
+  );
+}
+
+/** Shared per-contact generate → edit → send table for At Risk and Upgrade Candidates. */
+function AttendanceDraftTable({
+  members,
+  detailLabel,
+  tagFn,
+  generateDraft,
+  pageLabel,
+  subtitleText,
+  modalTitlePrefix,
+  modalSubtitle,
+}: {
+  members: { name: string; email: string; detail: string }[];
+  detailLabel: string;
+  tagFn: (name: string) => string;
+  generateDraft: (name: string) => Promise<void>;
+  pageLabel: string;
+  subtitleText: string;
+  modalTitlePrefix: string;
+  modalSubtitle: string;
+}) {
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const emailFor = useContactEmails();
+
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      if (res.ok) setCampaigns(data.campaigns);
+    } catch {
+      // the rest of the page still works without this
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
+    loadCampaigns();
+  }, [loadCampaigns]);
+
+  const missingDraftCount = campaigns ? members.filter((m) => !campaigns.find((c) => c.notes === tagFn(m.name))).length : members.length;
+  const anyQueued = !!campaigns?.some((c) => c.status === "Queued" && members.some((m) => c.notes === tagFn(m.name)));
+  usePollWhileQueued(anyQueued, loadCampaigns);
+
+  const openMember = members.find((m) => m.name === openDraftFor);
+  const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === tagFn(openDraftFor)) : undefined;
+  const openEmail = openMember ? emailFor(openMember.name, openMember.email) : "";
+
+  const selectableNames = members
+    .filter((m) => {
+      const camp = campaigns?.find((c) => c.notes === tagFn(m.name));
+      return camp && (camp.status === "Draft" || camp.status === "Error") && emailFor(m.name, m.email);
+    })
+    .map((m) => m.name);
+
+  function toggleSelected(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function generateAll() {
+    setGeneratingAll(true);
+    try {
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      const existing: Campaign[] = res.ok ? data.campaigns ?? [] : [];
+      const toDraft = members.filter((m) => !existing.find((c) => c.notes === tagFn(m.name)));
+      for (const m of toDraft) await generateDraft(m.name);
+      await loadCampaigns();
+    } finally {
+      setGeneratingAll(false);
+    }
+  }
+
+  return (
+    <>
+      <Card className="mb-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="font-semibold text-neutral-900">
+              {members.length} {pageLabel}
+              {members.length === 1 ? "" : "s"}
+            </p>
+            <p className="text-sm text-neutral-500 mt-1">{subtitleText}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <SendSelectedButton
+                campaigns={campaigns ?? []}
+                selectedNames={selected}
+                emailFor={emailFor}
+                tagFn={tagFn}
+                onDone={async () => {
+                  setSelected(new Set());
+                  await loadCampaigns();
+                }}
+              />
+            )}
+            {missingDraftCount === 0 ? (
+              <span className="text-sm font-medium text-neutral-500">All drafts generated</span>
+            ) : (
+              <button
+                onClick={generateAll}
+                disabled={generatingAll}
+                className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+              >
+                <Sparkles className="h-4 w-4" strokeWidth={2} />
+                {generatingAll ? "Drafting…" : `Generate all (${missingDraftCount})`}
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-neutral-400 border-b border-neutral-100">
+              <th className="py-2 pr-2 font-medium w-6"></th>
+              <th className="py-2 pr-4 font-medium">Name</th>
+              <th className="py-2 pr-4 font-medium">{detailLabel}</th>
+              <th className="py-2 pr-4 font-medium">Draft</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m, i) => {
+              const canSelect = selectableNames.includes(m.name);
+              const campaign = campaigns?.find((c) => c.notes === tagFn(m.name));
+              const isNew = campaign?.status === "Draft";
+              return (
+                <tr key={`${m.name}-${i}`} className={`border-b border-neutral-50 last:border-0 align-top ${isNew ? "bg-amber-50/60" : ""}`}>
+                  <td className="py-2.5 pr-2">
+                    {canSelect && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(m.name)}
+                        onChange={() => toggleSelected(m.name)}
+                        className="rounded border-neutral-300"
+                      />
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.detail}</td>
+                  <td className="py-2.5 pr-4 whitespace-nowrap">
+                    {!campaign ? (
+                      <GenerateDraftButton name={m.name} generateDraft={generateDraft} onGenerated={loadCampaigns} />
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setOpenDraftFor(m.name)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                        >
+                          {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+                          {isNew ? "New draft" : campaign.status}
+                        </button>
+                        {isNew && !emailFor(m.name, m.email) && (
+                          <span className="text-xs text-amber-600" title="No email on file">
+                            no email
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {openDraftFor && openMember && openCampaign && (
+        <DraftModal
+          title={`${modalTitlePrefix} ${openMember.name}`}
+          subtitle={modalSubtitle}
+          to={openEmail}
+          subject={openCampaign.subject}
+          body={openCampaign.messageBody}
+          showSubject
+          statusLabel={openCampaign.status}
+          sentAt={openCampaign.sentAt}
+          notes={openCampaign.notes}
+          sendDisabledReason={openEmail ? undefined : "This contact has no email on file — can't send."}
+          locked={openCampaign.status === "Sending" || openCampaign.status === "Sent" || openCampaign.status === "Queued"}
+          onClose={() => setOpenDraftFor(null)}
+          onPoll={loadCampaigns}
+          onSave={async (subject, messageBody) => {
+            const res = await fetch("/api/campaigns", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+            });
+            if (!res.ok) throw new Error(await apiError(res, "Failed to save."));
+            await loadCampaigns();
+          }}
+          onSend={async (subject, messageBody) => {
+            const res = await fetch("/api/campaigns/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: openCampaign.row, subject, messageBody }),
+            });
+            const message = res.ok ? null : await apiError(res, "Failed to send.");
+            await loadCampaigns();
+            if (message) throw new Error(message);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function GenerateDraftButton({
+  name,
+  generateDraft,
+  onGenerated,
+}: {
+  name: string;
+  generateDraft: (name: string) => Promise<void>;
+  onGenerated: () => Promise<void>;
+}) {
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(false);
+
+  return (
+    <button
+      onClick={async () => {
+        setGenerating(true);
+        setError(false);
+        try {
+          await generateDraft(name);
+          await onGenerated();
+        } catch {
+          setError(true);
+        } finally {
+          setGenerating(false);
+        }
+      }}
+      disabled={generating}
+      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+    >
+      <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+      {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
+    </button>
   );
 }
 
