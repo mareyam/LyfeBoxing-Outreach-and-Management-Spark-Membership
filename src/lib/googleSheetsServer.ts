@@ -419,3 +419,45 @@ export async function appendAppointmentRequest(input: {
     throw err;
   }
 }
+
+const EMAIL_TEMPLATES_TAB = "Email Templates";
+const EMAIL_TEMPLATES_HEADERS = ["Name", "Subject", "Body", "Created"];
+
+export async function appendEmailTemplate(input: { name: string; subject: string; body: string }): Promise<void> {
+  await ensureTab(EMAIL_TEMPLATES_TAB, EMAIL_TEMPLATES_HEADERS);
+  await appendTabRow(EMAIL_TEMPLATES_TAB, EMAIL_TEMPLATES_HEADERS, {
+    Name: input.name,
+    Subject: input.subject,
+    Body: input.body,
+    Created: new Date().toLocaleDateString("en-US"),
+  });
+}
+
+export async function deleteSheetRow(tabName: string, rowNumber: number): Promise<void> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title,sheets.properties.sheetId",
+  });
+  const sheet = (meta.data.sheets ?? []).find((s) => s.properties?.title === tabName);
+  if (!sheet?.properties?.sheetId && sheet?.properties?.sheetId !== 0) {
+    throw new SheetTabMissingError(tabName);
+  }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: sheet.properties.sheetId,
+              dimension: "ROWS",
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        },
+      ],
+    },
+  });
+}

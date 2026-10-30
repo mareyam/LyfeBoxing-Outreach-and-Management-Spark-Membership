@@ -41,7 +41,7 @@ async function main() {
 
   const server = await listen();
   process.env.GROK_WEBHOOK_URL = server.url;
-  process.env.GROK_WEBHOOK_AUTH = "Bearer test-secret";
+  process.env.GROK_WEBHOOK_AUTH = "test-secret";
 
   await notifyGrok({ tab: "Campaigns", rows: [35, 36], kind: "winback" });
   assert.equal(server.hits().length, 1);

@@ -386,31 +386,6 @@ function useSheetTab(tab: string) {
   return { state, reload };
 }
 
-type SummaryState =
-  | { status: "loading" }
-  | { status: "ok"; raw: string[][] }
-  | { status: "not-configured" }
-  | { status: "tab-missing" }
-  | { status: "error"; message: string };
-
-function useSummaryTab() {
-  const [state, setState] = useState<SummaryState>({ status: "loading" });
-  useEffect(() => {
-    fetch(`/api/lyfe-data?tab=${encodeURIComponent("Summary")}`)
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) {
-          if (data.notConfigured) return setState({ status: "not-configured" });
-          if (data.tabMissing) return setState({ status: "tab-missing" });
-          return setState({ status: "error", message: data.error ?? "Failed to load." });
-        }
-        setState({ status: "ok", raw: data.raw ?? [] });
-      })
-      .catch(() => setState({ status: "error", message: "Failed to load." }));
-  }, []);
-  return state;
-}
-
 function findField(row: SheetRow, ...candidates: string[]): string {
   const keys = Object.keys(row);
   for (const c of candidates) {
@@ -592,7 +567,7 @@ function SheetGate({
 export function MembershipsView() {
   return (
     <div className="max-w-6xl">
-      <PageHeader title="All Memberships" subtitle="Live roster from the Spark Memberships sheet." tool="Google Sheets (All Memberships)" />
+      <PageHeader title="Memberships" subtitle="Live roster from the Spark Memberships sheet, grouped by plan." tool="Google Sheets (All Memberships)" />
       <Link href="/lyfe-boxing/playbook" className="group block mb-6">
         <Card className="group-hover:border-neutral-300 transition-colors">
           <div className="flex items-center justify-between gap-4">
@@ -606,17 +581,28 @@ export function MembershipsView() {
           </div>
         </Card>
       </Link>
-      <SheetGate tab="All Memberships">{(rows) => <MembershipsTable rows={rows} />}</SheetGate>
+      <SheetGate tab="All Memberships">{(rows) => <MembershipsByPlan rows={rows} />}</SheetGate>
     </div>
   );
 }
 
-function MembershipsTable({ rows }: { rows: SheetRow[] }) {
-  const [query, setQuery] = useState("");
+type MappedMember = {
+  name: string;
+  membership: string;
+  expires: string;
+  overdue: string;
+  nextPayment: string;
+  method: string;
+  staff: string;
+};
 
-  const mapped = rows.map((r) => ({
+function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
+  const [query, setQuery] = useState("");
+  const [activePlan, setActivePlan] = useState<string | null>(null);
+
+  const mapped: MappedMember[] = rows.map((r) => ({
     name: findField(r, "name", "member", "member name"),
-    membership: findField(r, "membership"),
+    membership: findField(r, "membership") || "Uncategorized",
     expires: findField(r, "expires"),
     overdue: findField(r, "overdue"),
     nextPayment: findField(r, "next payment"),
@@ -624,18 +610,25 @@ function MembershipsTable({ rows }: { rows: SheetRow[] }) {
     staff: findField(r, "staff"),
   }));
 
-  const q = query.trim().toLowerCase();
-  const filtered = q ? mapped.filter((m) => m.name.toLowerCase().includes(q) || m.membership.toLowerCase().includes(q)) : mapped;
-
   const activeCount = mapped.filter((m) => m.expires.toLowerCase().includes("open")).length;
   const overdueCount = mapped.filter((m) => parseMoney(m.overdue) > 0).length;
 
-  const { pageItems, page, setPage, totalPages } = usePagination(filtered);
+  const q = query.trim().toLowerCase();
+  const filtered = q ? mapped.filter((m) => m.name.toLowerCase().includes(q) || m.membership.toLowerCase().includes(q)) : mapped;
+
+  const byPlan = new Map<string, MappedMember[]>();
+  for (const m of filtered) {
+    const list = byPlan.get(m.membership) ?? [];
+    list.push(m);
+    byPlan.set(m.membership, list);
+  }
+  const plans = Array.from(byPlan.entries()).sort((a, b) => b[1].length - a[1].length);
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <Stat label="Total members" value={mapped.length} />
+        <Stat label="Plans" value={new Set(mapped.map((m) => m.membership)).size} />
         <Stat label="Open-ended" value={activeCount} />
         <Stat label="Overdue" value={overdueCount} />
       </div>
@@ -647,32 +640,127 @@ function MembershipsTable({ rows }: { rows: SheetRow[] }) {
         className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
       />
       <p className="text-sm text-neutral-400 mb-3">
-        Showing {filtered.length} of {mapped.length} members
+        Showing {filtered.length} of {mapped.length} members across {plans.length} plans
+      </p>
+      {plans.length === 0 ? (
+        <Card className="text-center py-10 text-sm text-neutral-500">No members found.</Card>
+      ) : (
+        <div className="space-y-2">
+          {plans.map(([plan, members]) => (
+            <details
+              key={plan}
+              open={activePlan === plan || (activePlan === null && plans[0][0] === plan)}
+              onToggle={(e) => {
+                if ((e.target as HTMLDetailsElement).open) setActivePlan(plan);
+              }}
+              className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden"
+            >
+              <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-900">{plan}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    {members.length} member{members.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="border-t border-neutral-100 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-neutral-400 border-b border-neutral-100">
+                      <th className="py-2 pl-5 pr-4 font-medium">Name</th>
+                      <th className="py-2 pr-4 font-medium">Expires</th>
+                      <th className="py-2 pr-4 font-medium">Overdue</th>
+                      <th className="py-2 pr-4 font-medium">Next Payment</th>
+                      <th className="py-2 pr-5 font-medium">Staff</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m, i) => (
+                      <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                        <td className="py-2.5 pl-5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.overdue || "—"}</td>
+                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment || "—"}</td>
+                        <td className="py-2.5 pr-5 text-neutral-500 whitespace-nowrap">{m.staff || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// All Contacts
+// ---------------------------------------------------------------------------
+
+export function AllContactsView() {
+  return (
+    <div className="max-w-5xl">
+      <PageHeader title="All Contacts" subtitle="Everyone in the Spark Contacts sheet." tool="Google Sheets (Contacts)" />
+      <SheetGate tab="Contacts">{(rows) => <ContactsTable rows={rows} />}</SheetGate>
+    </div>
+  );
+}
+
+function ContactsTable({ rows }: { rows: SheetRow[] }) {
+  const [query, setQuery] = useState("");
+
+  const mapped = rows.map((r) => ({
+    name: findField(r, "name"),
+    email: findField(r, "email"),
+    phone: findField(r, "mobile phone", "phone"),
+    contactType: findField(r, "contact type"),
+  }));
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.contactType.toLowerCase().includes(q))
+    : mapped;
+
+  const { pageItems, page, setPage, totalPages } = usePagination(filtered);
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <Stat label="Total contacts" value={mapped.length} />
+      </div>
+      <input
+        type="text"
+        placeholder="Search by name, email, or type..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+      />
+      <p className="text-sm text-neutral-400 mb-3">
+        Showing {filtered.length} of {mapped.length} contacts
       </p>
       {filtered.length === 0 ? (
-        <Card className="text-center py-10 text-sm text-neutral-500">No members found.</Card>
+        <Card className="text-center py-10 text-sm text-neutral-500">No contacts found.</Card>
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-neutral-400 border-b border-neutral-100">
                 <th className="py-2 pr-4 font-medium">Name</th>
-                <th className="py-2 pr-4 font-medium">Membership</th>
-                <th className="py-2 pr-4 font-medium">Expires</th>
-                <th className="py-2 pr-4 font-medium">Overdue</th>
-                <th className="py-2 pr-4 font-medium">Next Payment</th>
-                <th className="py-2 pr-4 font-medium">Staff</th>
+                <th className="py-2 pr-4 font-medium">Email</th>
+                <th className="py-2 pr-4 font-medium">Phone</th>
+                <th className="py-2 pr-4 font-medium">Type</th>
               </tr>
             </thead>
             <tbody>
-              {pageItems.map((m, i) => (
-                <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{m.membership || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.overdue || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.staff || "—"}</td>
+              {pageItems.map((c, i) => (
+                <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.email || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.phone || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.contactType || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -1754,6 +1842,7 @@ export function CampaignsView() {
   const [sendingRow, setSendingRow] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openRow, setOpenRow] = useState<number | null>(null);
+  const [deletingRow, setDeletingRow] = useState<number | null>(null);
   const emailFor = useContactEmails();
 
   const load = useCallback(async () => {
@@ -1823,6 +1912,16 @@ export function CampaignsView() {
       else next.add(row);
       return next;
     });
+  }
+
+  async function handleDelete(row: number) {
+    setDeletingRow(row);
+    try {
+      const res = await fetch(`/api/campaigns?row=${row}`, { method: "DELETE" });
+      if (res.ok) await load();
+    } finally {
+      setDeletingRow(null);
+    }
   }
 
   const openCampaign = campaigns?.find((c) => c.row === openRow);
@@ -1982,6 +2081,15 @@ export function CampaignsView() {
                     </button>
                   )}
                   {locked && <p className="text-xs text-neutral-400">Locked</p>}
+                  {!locked && (
+                    <button
+                      onClick={() => handleDelete(c.row)}
+                      disabled={deletingRow === c.row}
+                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                    >
+                      {deletingRow === c.row ? "Deleting…" : "Delete"}
+                    </button>
+                  )}
                 </div>
               </div>
             </Card>
@@ -2052,11 +2160,29 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
   const [brief, setBrief] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [templateId, setTemplateId] = useState("");
 
   const showEmail = channel === "Email" || channel === "Both";
   const showSms = channel === "SMS" || channel === "Both";
   const smsLength = smsBody.length;
   const overSmsLimit = showSms && smsLength > 160;
+
+  useEffect(() => {
+    fetch("/api/email-templates")
+      .then((r) => r.json())
+      .then((d) => setTemplates(d.templates ?? []))
+      .catch(() => setTemplates([]));
+  }, []);
+
+  function applyTemplate(row: string) {
+    setTemplateId(row);
+    const t = templates.find((tpl) => String(tpl.row) === row);
+    if (!t) return;
+    setSubject(t.subject);
+    setMessageBody(t.body);
+    if (!campaignName.trim()) setCampaignName(t.name);
+  }
 
   async function handleGenerate() {
     if (!brief.trim()) {
@@ -2187,6 +2313,31 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
         </div>
         <p className="text-xs text-neutral-400 -mt-2">Audience: {audience}</p>
 
+        {showEmail && templates.length > 0 && (
+          <div>
+            <label className="text-sm font-medium text-neutral-700 block mb-1">Email template</label>
+            <select
+              value={templateId}
+              onChange={(e) => applyTemplate(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            >
+              <option value="">Start from scratch</option>
+              {templates.map((t) => (
+                <option key={t.row} value={t.row}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-400 mt-1">
+              Fills in subject &amp; body — create more in{" "}
+              <Link href="/lyfe-boxing/email-templates" className="underline hover:text-neutral-600">
+                Email Templates
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+
         <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 space-y-2">
           <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
           <div className="flex gap-2">
@@ -2262,6 +2413,258 @@ function NewCampaignForm({ onCreated }: { onCreated: () => void }) {
           className="rounded-full bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
         >
           {submitting ? "Saving…" : "Save as draft"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Email Templates
+// ---------------------------------------------------------------------------
+
+type EmailTemplate = {
+  row: number;
+  name: string;
+  subject: string;
+  body: string;
+  created: string;
+};
+
+export function EmailTemplatesView() {
+  const [templates, setTemplates] = useState<EmailTemplate[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [deletingRow, setDeletingRow] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/email-templates");
+      const data = await res.json();
+      if (!res.ok) {
+        setNotConfigured(!!data.notConfigured);
+        setError(data.error ?? "Failed to load templates.");
+        return;
+      }
+      setTemplates(data.templates ?? []);
+      setError(null);
+      setNotConfigured(false);
+    } catch {
+      setError("Failed to load templates.");
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
+    load();
+  }, [load]);
+
+  async function handleDelete(row: number) {
+    setDeletingRow(row);
+    try {
+      const res = await fetch(`/api/email-templates?row=${row}`, { method: "DELETE" });
+      if (res.ok) await load();
+    } finally {
+      setDeletingRow(null);
+    }
+  }
+
+  return (
+    <div className="max-w-4xl">
+      <PageHeader
+        title="Email Templates"
+        subtitle="Reusable email drafts you write once and pick from when creating a Campaign."
+        tool="Google Sheets (Email Templates)"
+      />
+
+      <div className="mb-6">
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800"
+        >
+          <Plus className="h-4 w-4" strokeWidth={2} />
+          {showForm ? "Cancel" : "New template"}
+        </button>
+      </div>
+
+      {showForm && (
+        <NewTemplateForm
+          onCreated={async () => {
+            setShowForm(false);
+            await load();
+          }}
+        />
+      )}
+
+      {notConfigured && (
+        <Card className="mb-6 border-amber-200 bg-amber-50">
+          <p className="text-sm text-amber-800">
+            Templates aren&apos;t wired up yet — the Google service account needs edit access to the sheet, and its
+            credentials need to be set as environment variables on this deployment.
+          </p>
+        </Card>
+      )}
+      {error && !notConfigured && (
+        <Card className="mb-6 border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{error}</p>
+        </Card>
+      )}
+
+      {templates === null && !error && <LoadingCard />}
+      {templates !== null && templates.length === 0 && !error && (
+        <Card className="text-center py-10 text-sm text-neutral-500">No templates yet. Create one above.</Card>
+      )}
+
+      <div className="space-y-3">
+        {(templates ?? []).map((t) => (
+          <Card key={t.row}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-neutral-900">{t.name}</p>
+                <p className="text-sm text-neutral-400 mt-1">Subject: {t.subject}</p>
+                <p className="text-sm text-neutral-600 mt-2 max-w-xl whitespace-pre-line">{t.body}</p>
+                {t.created && <p className="text-xs text-neutral-400 mt-2">Created {t.created}</p>}
+              </div>
+              <button
+                onClick={() => handleDelete(t.row)}
+                disabled={deletingRow === t.row}
+                className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+              >
+                {deletingRow === t.row ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [brief, setBrief] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  async function handleGenerate() {
+    if (!brief.trim()) {
+      setGenError("Type a rough idea first, e.g. \"welcome new members\".");
+      return;
+    }
+    setGenError(null);
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/campaigns/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief, channel: "Email" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGenError(data.error ?? "Couldn't generate a draft.");
+        return;
+      }
+      if (data.subject) setSubject(data.subject);
+      if (data.body) setBody(data.body);
+      if (!name.trim()) setName(brief.slice(0, 60));
+    } catch {
+      setGenError("Couldn't generate a draft.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/email-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, subject, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to create template.");
+        return;
+      }
+      onCreated();
+    } catch {
+      setError("Failed to create template.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="mb-6">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="text-sm font-medium text-neutral-700 block mb-1">Template name</label>
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            placeholder="e.g. Monthly newsletter"
+          />
+        </div>
+
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 space-y-2">
+          <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
+          <div className="flex gap-2">
+            <input
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              placeholder="e.g. welcome new members, friendly and upbeat"
+            />
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 whitespace-nowrap"
+            >
+              {generating ? "Generating…" : "Generate with AI"}
+            </button>
+          </div>
+          {genError && <p className="text-sm text-red-600">{genError}</p>}
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-neutral-700 block mb-1">Subject</label>
+          <input
+            required
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            placeholder="Use {First name} for personalization"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-neutral-700 block mb-1">Body</label>
+          <textarea
+            required
+            rows={6}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            placeholder="Use {First name} for personalization"
+          />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-full bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {submitting ? "Saving…" : "Save template"}
         </button>
       </form>
     </Card>
@@ -3041,19 +3444,26 @@ function GenerateDraftButton({
 }
 
 // ---------------------------------------------------------------------------
-// Weekly Summary
+// Monthly Summary
 // ---------------------------------------------------------------------------
 
-const WEEKLY_SUMMARY_WEEKS = 26; // ~6 months
+function formatMonthLabel(monthStart: Date): string {
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const monthYear = monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return `1–${daysInMonth} ${monthYear}`;
+}
 
-function formatWeekLabel(start: number, end: number): string {
-  const startStr = new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const endStr = new Date(end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  return `${startStr} – ${endStr}`;
+/** Oldest "Signed" date across all memberships — the real start of the gym's data, not an arbitrary lookback window. */
+function oldestSignedDate(membershipRows: SheetRow[]): Date | null {
+  let oldest: Date | null = null;
+  for (const m of membershipRows) {
+    const d = parseSlashDate(findField(m, "signed"));
+    if (d && (!oldest || d.getTime() < oldest.getTime())) oldest = d;
+  }
+  return oldest;
 }
 
 export function WeeklySummaryView() {
-  const summary = useSummaryTab();
   const memberships = useSheetTab("All Memberships");
   const cancelled = useSheetTab("Cancelled (Oct)");
   const pastDue = useSheetTab("Past Due");
@@ -3073,24 +3483,12 @@ export function WeeklySummaryView() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Summary" subtitle="Key numbers, plus a week-by-week recap for the past 6 months." tool="Google Sheets (Summary + more)" />
-      {summary.status === "ok" && summary.raw.length > 0 && (
-        <Card className="mb-6">
-          <dl className="divide-y divide-neutral-100">
-            {summary.raw.map(([label, value], i) => (
-              <div key={i} className="flex items-center justify-between py-2.5">
-                <dt className="text-sm text-neutral-500">{label}</dt>
-                <dd className="text-sm font-medium text-neutral-900">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
-      )}
+      <PageHeader title="Summary" subtitle="Key numbers, plus a month-by-month recap since the first member joined." tool="Google Sheets (Summary + more)" />
       {loading && <LoadingCard />}
       {!loading && notConfigured && <SetupNeeded />}
       {!loading && !notConfigured && firstError && firstError.status === "error" && <SheetErrorCard message={firstError.message} />}
       {!loading && !notConfigured && !firstError && (
-        <WeeklySummaryList
+        <MonthlySummaryList
           membershipRows={memberships.state.status === "ok" ? memberships.state.rows : []}
           cancelledRows={cancelled.state.status === "ok" ? cancelled.state.rows : []}
           pastDueRows={pastDue.state.status === "ok" ? pastDue.state.rows : []}
@@ -3102,7 +3500,7 @@ export function WeeklySummaryView() {
   );
 }
 
-function WeeklySummaryList({
+function MonthlySummaryList({
   membershipRows,
   cancelledRows,
   pastDueRows,
@@ -3115,16 +3513,22 @@ function WeeklySummaryList({
   paymentRows: SheetRow[];
   campaigns: Campaign[];
 }) {
-  // Captured once on mount — a static reference point for the week windows.
-  const [now] = useState(() => Date.now());
+  // Captured once on mount — a static reference point for "now".
+  const [now] = useState(() => new Date());
   const pastDueTotal = useMemo(() => pastDueRows.reduce((sum, p) => sum + parseMoney(findField(p, "total overdue")), 0), [pastDueRows]);
 
-  const weeks = useMemo(() => {
+  const months = useMemo(() => {
+    const start = oldestSignedDate(membershipRows);
+    if (!start) return [];
+
     const list = [];
-    for (let i = 0; i < WEEKLY_SUMMARY_WEEKS; i++) {
-      const end = now - i * 7 * 86_400_000;
-      const start = end - 7 * 86_400_000;
-      const inRange = (d: Date | null) => d !== null && d.getTime() > start && d.getTime() <= end;
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const last = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    while (cursor.getTime() <= last.getTime()) {
+      const monthStart = new Date(cursor);
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      const inRange = (d: Date | null) => d !== null && d.getTime() >= monthStart.getTime() && d.getTime() < monthEnd.getTime();
 
       const newMembers = membershipRows.filter((m) => inRange(parseSlashDate(findField(m, "signed")))).length;
       const cancellations = cancelledRows.filter((c) => inRange(parseSlashDate(findField(c, "cancelled date", "cancelled")))).length;
@@ -3133,9 +3537,10 @@ function WeeklySummaryList({
         .reduce((sum, p) => sum + parseMoney(findField(p, "amount paid", "amount")), 0);
       const campaignsSent = campaigns.filter((c) => (c.status === "Sent" || c.status === "Queued") && inRange(parseSlashDate(c.sentAt)));
 
-      list.push({ start, end, newMembers, cancellations, revenue, campaignsSent });
+      list.push({ monthStart, newMembers, cancellations, revenue, campaignsSent });
+      cursor.setMonth(cursor.getMonth() + 1);
     }
-    return list;
+    return list.reverse(); // most recent month first
   }, [now, membershipRows, cancelledRows, paymentRows, campaigns]);
 
   return (
@@ -3148,43 +3553,47 @@ function WeeklySummaryList({
         </div>
       </Card>
 
-      <div className="space-y-2">
-        {weeks.map((w, i) => (
-          <details key={w.start} open={i === 0} className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden">
-            <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
-              <div>
-                <p className="text-sm font-semibold text-neutral-900">{formatWeekLabel(w.start, w.end)}</p>
-                <p className="text-xs text-neutral-400 mt-0.5">
-                  {w.newMembers} new · {w.cancellations} cancelled · ${w.revenue.toLocaleString()} revenue
-                </p>
+      {months.length === 0 ? (
+        <Card className="text-center py-10 text-sm text-neutral-500">No membership signup dates found yet.</Card>
+      ) : (
+        <div className="space-y-2">
+          {months.map((m, i) => (
+            <details key={m.monthStart.getTime()} open={i === 0} className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+              <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-900">{formatMonthLabel(m.monthStart)}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    {m.newMembers} new · {m.cancellations} cancelled · ${m.revenue.toLocaleString()} revenue
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <Stat label="New members" value={m.newMembers} />
+                  <Stat label="Cancellations" value={m.cancellations} />
+                  <Stat label="Revenue" value={`$${m.revenue.toLocaleString()}`} />
+                  <Stat label="Campaigns sent" value={m.campaignsSent.length} />
+                </div>
+                <div className="mt-4">
+                  <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent</p>
+                  {m.campaignsSent.length === 0 ? (
+                    <p className="text-sm text-neutral-400">None.</p>
+                  ) : (
+                    <ul className="text-sm text-neutral-600 space-y-1">
+                      {m.campaignsSent.map((c) => (
+                        <li key={c.row}>
+                          {c.campaignName} ({c.channel}) — {c.status}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
-              <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
-            </summary>
-            <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <Stat label="New members" value={w.newMembers} />
-                <Stat label="Cancellations" value={w.cancellations} />
-                <Stat label="Revenue" value={`$${w.revenue.toLocaleString()}`} />
-                <Stat label="Campaigns sent" value={w.campaignsSent.length} />
-              </div>
-              <div className="mt-4">
-                <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent</p>
-                {w.campaignsSent.length === 0 ? (
-                  <p className="text-sm text-neutral-400">None.</p>
-                ) : (
-                  <ul className="text-sm text-neutral-600 space-y-1">
-                    {w.campaignsSent.map((c) => (
-                      <li key={c.row}>
-                        {c.campaignName} ({c.channel}) — {c.status}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </details>
-        ))}
-      </div>
+            </details>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

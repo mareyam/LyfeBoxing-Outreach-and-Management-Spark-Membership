@@ -13,6 +13,7 @@ const ALLOWED_TABS = new Set([
   "Digest",
   "Playbook",
   "Attendance",
+  "Email Templates",
 ]);
 
 export async function GET(req: NextRequest) {

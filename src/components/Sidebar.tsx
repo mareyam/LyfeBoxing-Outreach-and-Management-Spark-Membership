@@ -5,43 +5,43 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Dumbbell, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
-const lyfeBoxingGroups = [
+type SidebarLinkDef = { label: string; href?: string };
+
+const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
   {
-    heading: "Overview",
-    links: [
-      { href: "/lyfe-boxing/weekly-summary", label: "Summary" },
-    ],
+    heading: "01. Overview",
+    links: [{ href: "/lyfe-boxing/weekly-summary", label: "Summary" }],
   },
   {
-    heading: "Members & CRM",
+    heading: "02. CRM & Members",
     links: [
-      { href: "/lyfe-boxing", label: "Memberships" },
+      { href: "/lyfe-boxing", label: "All Contacts" },
       { href: "/lyfe-boxing/leads", label: "Leads" },
+      { href: "/lyfe-boxing/memberships", label: "Memberships" },
     ],
   },
   {
-    heading: "Retention & Growth",
+    heading: "03. Retention & Growth",
     links: [
       { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back" },
       { href: "/lyfe-boxing/past-due", label: "Past Due" },
       { href: "/lyfe-boxing/at-risk", label: "At Risk" },
       { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion" },
       { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates" },
+      { label: "Inactive Members" },
     ],
   },
   {
-    heading: "Marketing & Engagement",
+    heading: "04. Marketing",
     links: [
       { href: "/lyfe-boxing/campaigns", label: "Campaigns" },
+      { href: "/lyfe-boxing/email-templates", label: "Email Templates" },
       { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
+      { label: "Workflows" },
     ],
   },
   {
-    heading: "Revenue & Payments",
-    links: [{ href: "/lyfe-boxing/payments", label: "Payments" }],
-  },
-  {
-    heading: "Operations",
+    heading: "05. Operations",
     links: [
       { href: "/lyfe-boxing/calendar", label: "Calendar" },
       { href: "/lyfe-boxing/playbook", label: "Playbook" },
@@ -171,19 +171,29 @@ export default function Sidebar() {
                   </button>
                   {groupOpen && (
                     <div className="space-y-0.5 pb-2">
-                      {group.links.map((l) => (
-                        <Link
-                          key={l.href}
-                          href={l.href}
-                          className={`block rounded-lg px-3 py-2 ml-[18px] text-sm transition-colors ${
-                            pathname === l.href
-                              ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
-                              : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
-                          }`}
-                        >
-                          {l.label}
-                        </Link>
-                      ))}
+                      {group.links.map((l) =>
+                        l.href ? (
+                          <Link
+                            key={l.href}
+                            href={l.href}
+                            className={`block rounded-lg px-3 py-2 ml-[18px] text-sm transition-colors ${
+                              pathname === l.href
+                                ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
+                                : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
+                            }`}
+                          >
+                            {l.label}
+                          </Link>
+                        ) : (
+                          <span
+                            key={l.label}
+                            title="Coming soon"
+                            className="block rounded-lg px-3 py-2 ml-[18px] text-sm text-neutral-300 cursor-not-allowed select-none"
+                          >
+                            {l.label}
+                          </span>
+                        )
+                      )}
                     </div>
                   )}
                 </div>

@@ -1,11 +1,11 @@
 import "server-only";
 import { playbookPromptBlock, readPlaybook, readRecentExamples, type Playbook, type DraftExample } from "@/lib/playbook";
 
-export const DRAFT_MODEL = "claude-sonnet-5";
+export const DRAFT_MODEL = "gpt-6-luna";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
-    super("AI drafting isn't configured yet — set ANTHROPIC_API_KEY on Vercel.");
+    super("AI drafting isn't configured yet — set OPENAI_API_KEY on Vercel.");
     this.name = "AiNotConfiguredError";
   }
 }
@@ -24,21 +24,19 @@ export async function loadGenerationContext(): Promise<{ playbook: Playbook; exa
 }
 
 export async function draftWithClaude(input: { system: string; user: string; maxTokens?: number }): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new AiNotConfiguredError();
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages.create({
+  const { default: OpenAI } = await import("openai");
+  const client = new OpenAI({ apiKey });
+  const completion = await client.chat.completions.create({
     model: DRAFT_MODEL,
-    max_tokens: input.maxTokens ?? 700,
-    system: input.system,
-    messages: [{ role: "user", content: input.user }],
+    max_completion_tokens: input.maxTokens ?? 700,
+    messages: [
+      { role: "system", content: input.system },
+      { role: "user", content: input.user },
+    ],
   });
-  return message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("")
-    .trim();
+  return (completion.choices[0]?.message?.content ?? "").trim();
 }
 
 export function parseSubjectBody(text: string): { subject: string; body: string } {

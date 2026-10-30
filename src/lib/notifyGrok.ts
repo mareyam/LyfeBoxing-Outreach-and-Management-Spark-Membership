@@ -64,7 +64,7 @@ export async function notifyGrok({ tab, rows, kind, channel, smsBody }: NotifyGr
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: auth as string,
+        Authorization: `Bearer ${auth}`,
       },
       body,
       cache: "no-store",

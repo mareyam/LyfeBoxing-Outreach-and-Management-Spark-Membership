@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listCampaigns, appendCampaign, updateCampaignContent, SheetsNotConfiguredError } from "@/lib/googleSheetsServer";
+import { listCampaigns, appendCampaign, updateCampaignContent, deleteSheetRow, SheetsNotConfiguredError } from "@/lib/googleSheetsServer";
 
 export async function GET() {
   try {
@@ -73,5 +73,21 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const row = Number(req.nextUrl.searchParams.get("row"));
+    if (!row || row < 2) {
+      return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
+    }
+    await deleteSheetRow("Campaigns", row);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (err instanceof SheetsNotConfiguredError) {
+      return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }
 }
