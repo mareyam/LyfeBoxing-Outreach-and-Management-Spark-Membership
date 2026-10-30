@@ -194,7 +194,7 @@ export async function findEmailByFullName(fullName: string): Promise<string> {
 
 export async function updateCampaignContent(
   row: number,
-  input: { subject: string; messageBody: string; smsBody?: string }
+  input: { subject: string; messageBody: string; smsBody?: string; audience?: string }
 ): Promise<void> {
   const sheets = getSheetsClient();
 
@@ -212,6 +212,9 @@ export async function updateCampaignContent(
   ];
   if (input.smsBody !== undefined) {
     data.push({ range: `Campaigns!K${row}`, values: [[input.smsBody]] });
+  }
+  if (input.audience !== undefined) {
+    data.push({ range: `Campaigns!C${row}`, values: [[input.audience]] });
   }
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,

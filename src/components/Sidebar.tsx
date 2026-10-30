@@ -9,15 +9,13 @@ const lyfeBoxingGroups = [
   {
     heading: "Overview",
     links: [
-      { href: "/lyfe-boxing/summary", label: "Summary" },
-      { href: "/lyfe-boxing/weekly-summary", label: "Weekly Summary" },
+      { href: "/lyfe-boxing/weekly-summary", label: "Summary" },
     ],
   },
   {
     heading: "Members & CRM",
     links: [
       { href: "/lyfe-boxing", label: "Memberships" },
-      { href: "/lyfe-boxing/contacts", label: "Contacts" },
       { href: "/lyfe-boxing/leads", label: "Leads" },
     ],
   },
@@ -58,6 +56,13 @@ export default function Sidebar() {
   const isLyfeBoxing = pathname.startsWith("/lyfe-boxing");
   const [lyfeBoxingOpen, setLyfeBoxingOpen] = useState(isLyfeBoxing);
   const [collapsed, setCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(lyfeBoxingGroups.map((g) => [g.heading, g.links.some((l) => l.href === pathname)]))
+  );
+
+  function toggleGroup(heading: string) {
+    setOpenGroups((prev) => ({ ...prev, [heading]: !prev[heading] }));
+  }
 
   useEffect(() => {
     try {
@@ -148,27 +153,42 @@ export default function Sidebar() {
           )}
         </button>
         {lyfeBoxingOpen && (
-          <div className="ml-[22px] pl-[13px] border-l border-neutral-200 py-0.5">
-            {lyfeBoxingGroups.map((group) => (
-              <div key={group.heading} className="mb-3 last:mb-0">
-                <p className="px-3 pt-2 pb-1 text-xs font-semibold text-neutral-400 uppercase tracking-wide">{group.heading}</p>
-                <div className="space-y-0.5">
-                  {group.links.map((l) => (
-                    <Link
-                      key={l.href}
-                      href={l.href}
-                      className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-                        pathname === l.href
-                          ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
-                          : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
-                      }`}
-                    >
-                      {l.label}
-                    </Link>
-                  ))}
+          <div className="ml-[22px] pl-[13px] border-l border-neutral-200 py-1 space-y-0.5">
+            {lyfeBoxingGroups.map((group) => {
+              const groupOpen = !!openGroups[group.heading];
+              return (
+                <div key={group.heading}>
+                  <button
+                    onClick={() => toggleGroup(group.heading)}
+                    className="w-full flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-400 uppercase tracking-wide hover:bg-white/70 hover:text-neutral-600 transition-colors"
+                  >
+                    {groupOpen ? (
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                    )}
+                    <span className="flex-1 text-left">{group.heading}</span>
+                  </button>
+                  {groupOpen && (
+                    <div className="space-y-0.5 pb-2">
+                      {group.links.map((l) => (
+                        <Link
+                          key={l.href}
+                          href={l.href}
+                          className={`block rounded-lg px-3 py-2 ml-[18px] text-sm transition-colors ${
+                            pathname === l.href
+                              ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
+                              : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
+                          }`}
+                        >
+                          {l.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -1,5 +1,6 @@
-import { SummaryView } from "@/components/lyfeBoxing/views";
+import { redirect } from "next/navigation";
 
+// Summary was merged into Weekly Summary — keep the old URL working.
 export default function Page() {
-  return <SummaryView />;
+  redirect("/lyfe-boxing/weekly-summary");
 }
