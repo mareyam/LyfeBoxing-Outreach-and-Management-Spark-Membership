@@ -4,25 +4,51 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Dumbbell, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
-import { agents } from "@/lib/data";
-import { agentIcons } from "@/lib/icons";
 
-const lyfeBoxingLinks = [
-  { href: "/lyfe-boxing", label: "Memberships" },
-  { href: "/lyfe-boxing/summary", label: "Summary" },
-  { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back" },
-  { href: "/lyfe-boxing/past-due", label: "Past Due" },
-  { href: "/lyfe-boxing/campaigns", label: "Campaigns" },
-  { href: "/lyfe-boxing/leads", label: "Leads" },
-  { href: "/lyfe-boxing/playbook", label: "Playbook" },
-  { href: "/lyfe-boxing/payments", label: "Payments (Oct 1-25)" },
-  { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
-  { href: "/lyfe-boxing/contacts", label: "Contacts" },
-  { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion" },
-  { href: "/lyfe-boxing/at-risk", label: "At Risk" },
-  { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates" },
-  { href: "/lyfe-boxing/weekly-summary", label: "Weekly Summary" },
-  { href: "/lyfe-boxing/calendar", label: "Calendar" },
+const lyfeBoxingGroups = [
+  {
+    heading: "Overview",
+    links: [
+      { href: "/lyfe-boxing/summary", label: "Summary" },
+      { href: "/lyfe-boxing/weekly-summary", label: "Weekly Summary" },
+    ],
+  },
+  {
+    heading: "Members & CRM",
+    links: [
+      { href: "/lyfe-boxing", label: "Memberships" },
+      { href: "/lyfe-boxing/contacts", label: "Contacts" },
+      { href: "/lyfe-boxing/leads", label: "Leads" },
+    ],
+  },
+  {
+    heading: "Retention & Growth",
+    links: [
+      { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back" },
+      { href: "/lyfe-boxing/past-due", label: "Past Due" },
+      { href: "/lyfe-boxing/at-risk", label: "At Risk" },
+      { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion" },
+      { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates" },
+    ],
+  },
+  {
+    heading: "Marketing & Engagement",
+    links: [
+      { href: "/lyfe-boxing/campaigns", label: "Campaigns" },
+      { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
+    ],
+  },
+  {
+    heading: "Revenue & Payments",
+    links: [{ href: "/lyfe-boxing/payments", label: "Payments" }],
+  },
+  {
+    heading: "Operations",
+    links: [
+      { href: "/lyfe-boxing/calendar", label: "Calendar" },
+      { href: "/lyfe-boxing/playbook", label: "Playbook" },
+    ],
+  },
 ];
 
 const COLLAPSE_KEY = "sidebar-collapsed";
@@ -31,7 +57,6 @@ export default function Sidebar() {
   const pathname = usePathname();
   const isLyfeBoxing = pathname.startsWith("/lyfe-boxing");
   const [lyfeBoxingOpen, setLyfeBoxingOpen] = useState(isLyfeBoxing);
-  const [othersOpen, setOthersOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -123,50 +148,30 @@ export default function Sidebar() {
           )}
         </button>
         {lyfeBoxingOpen && (
-          <div className="ml-[22px] pl-[13px] border-l border-neutral-200 space-y-0.5 py-0.5">
-            {lyfeBoxingLinks.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname === l.href
-                    ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
-                    : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
-                }`}
-              >
-                {l.label}
-              </Link>
+          <div className="ml-[22px] pl-[13px] border-l border-neutral-200 py-0.5">
+            {lyfeBoxingGroups.map((group) => (
+              <div key={group.heading} className="mb-3 last:mb-0">
+                <p className="px-3 pt-2 pb-1 text-xs font-semibold text-neutral-400 uppercase tracking-wide">{group.heading}</p>
+                <div className="space-y-0.5">
+                  {group.links.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                        pathname === l.href
+                          ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
+                          : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
+                      }`}
+                    >
+                      {l.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
 
-        <button
-          onClick={() => setOthersOpen((o) => !o)}
-          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-neutral-600 hover:bg-white/70 hover:text-neutral-900 transition-colors mt-1"
-        >
-          <span className="flex-1 text-left">Others</span>
-          {othersOpen ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
-          )}
-        </button>
-        {othersOpen && (
-          <div className="space-y-0.5">
-            {agents.map((a) => {
-              const href = `/agents/${a.slug}`;
-              return (
-                <SidebarLink
-                  key={a.slug}
-                  href={href}
-                  label={a.name}
-                  Icon={agentIcons[a.icon]}
-                  active={pathname === href}
-                />
-              );
-            })}
-          </div>
-        )}
       </nav>
     </aside>
   );
