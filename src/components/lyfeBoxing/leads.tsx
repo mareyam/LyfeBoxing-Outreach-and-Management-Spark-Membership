@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Send, Sparkles } from "lucide-react";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { DraftModal, PaginationControls, apiError, usePagination, usePollWhileQueued } from "@/components/lyfeBoxing/views";
@@ -211,11 +212,21 @@ export function LeadsView() {
 
   return (
     <div className="max-w-6xl">
-      <PageHeader
-        title="Leads"
-        subtitle="Follow-ups for new leads. Generate a draft, edit it, then send. Grok delivers anything marked Queued and writes Last Contacted."
-        tool="Google Sheets (Leads + Digest)"
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <PageHeader
+            title="Leads"
+            subtitle="Follow-ups for new leads. Generate a draft, edit it, then send. Grok delivers anything marked Queued and writes Last Contacted."
+            tool="Google Sheets (Leads + Digest)"
+          />
+        </div>
+        <Link
+          href="/lyfe-boxing/playbook"
+          className="shrink-0 mt-1 rounded-full border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        >
+          Playbook
+        </Link>
+      </div>
 
       {digest && (
         <Card className="mb-6">

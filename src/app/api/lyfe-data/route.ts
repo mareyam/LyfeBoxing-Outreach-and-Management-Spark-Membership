@@ -12,6 +12,7 @@ const ALLOWED_TABS = new Set([
   "Leads",
   "Digest",
   "Playbook",
+  "Attendance",
 ]);
 
 export async function GET(req: NextRequest) {

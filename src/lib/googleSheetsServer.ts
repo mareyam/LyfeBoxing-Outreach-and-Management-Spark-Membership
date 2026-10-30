@@ -38,9 +38,10 @@ export type CampaignRow = {
   recipients: string;
   sentAt: string;
   notes: string;
+  smsBody: string;
 };
 
-const CAMPAIGNS_RANGE = "Campaigns!A2:J1000";
+const CAMPAIGNS_RANGE = "Campaigns!A2:K1000";
 
 export async function listCampaigns(): Promise<CampaignRow[]> {
   const sheets = getSheetsClient();
@@ -62,6 +63,7 @@ export async function listCampaigns(): Promise<CampaignRow[]> {
       recipients: r[7] ?? "",
       sentAt: r[8] ?? "",
       notes: r[9] ?? "",
+      smsBody: r[10] ?? "",
     }))
     .filter((c) => c.campaignName.trim() !== "");
 }
@@ -73,11 +75,12 @@ export async function appendCampaign(input: {
   subject: string;
   messageBody: string;
   notes?: string;
+  smsBody?: string;
 }): Promise<void> {
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: "Campaigns!A:J",
+    range: "Campaigns!A:K",
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
@@ -93,6 +96,7 @@ export async function appendCampaign(input: {
           "",
           "",
           input.notes ?? "",
+          input.smsBody ?? "",
         ],
       ],
     },
@@ -106,23 +110,27 @@ export type CampaignDraft = {
   messageBody: string;
   status: string;
   notes: string;
+  channel: string;
+  smsBody: string;
 };
 
-/** Reads one Campaigns row (columns A–J). Does not change column order. */
+/** Reads one Campaigns row (columns A–K). Does not change column order. */
 export async function getCampaignDraft(row: number): Promise<CampaignDraft> {
   const sheets = getSheetsClient();
   const current = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `Campaigns!A${row}:J${row}`,
+    range: `Campaigns!A${row}:K${row}`,
   });
   const r = current.data.values?.[0] ?? [];
   return {
     campaignName: (r[0] ?? "").toString(),
+    channel: (r[1] ?? "").toString(),
     audience: (r[2] ?? "").toString(),
     subject: (r[3] ?? "").toString(),
     messageBody: (r[4] ?? "").toString(),
     status: (r[6] ?? "").toString() || "Draft",
     notes: (r[9] ?? "").toString(),
+    smsBody: (r[10] ?? "").toString(),
   };
 }
 
@@ -184,7 +192,10 @@ export async function findEmailByFullName(fullName: string): Promise<string> {
   return "";
 }
 
-export async function updateCampaignContent(row: number, input: { subject: string; messageBody: string }): Promise<void> {
+export async function updateCampaignContent(
+  row: number,
+  input: { subject: string; messageBody: string; smsBody?: string }
+): Promise<void> {
   const sheets = getSheetsClient();
 
   const current = await sheets.spreadsheets.values.get({
@@ -196,11 +207,15 @@ export async function updateCampaignContent(row: number, input: { subject: strin
     throw new Error(`Row ${row} can't be edited from status "${status}".`);
   }
 
-  await sheets.spreadsheets.values.update({
+  const data: { range: string; values: string[][] }[] = [
+    { range: `Campaigns!D${row}:E${row}`, values: [[input.subject, input.messageBody]] },
+  ];
+  if (input.smsBody !== undefined) {
+    data.push({ range: `Campaigns!K${row}`, values: [[input.smsBody]] });
+  }
+  await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    range: `Campaigns!D${row}:E${row}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [[input.subject, input.messageBody]] },
+    requestBody: { valueInputOption: "RAW", data },
   });
 }
 
