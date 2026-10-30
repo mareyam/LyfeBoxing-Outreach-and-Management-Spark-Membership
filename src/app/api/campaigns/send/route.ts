@@ -11,12 +11,13 @@ export async function POST(req: NextRequest) {
     const subject: string | undefined = body?.subject;
     const messageBody: string | undefined = body?.messageBody;
     const smsBody: string | undefined = body?.smsBody;
+    const audience: string | undefined = body?.audience;
 
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
     }
 
-    const { kind, channel, smsBody: queuedSmsBody } = await prepareCampaignSend({ row, subject, messageBody, smsBody });
+    const { kind, channel, smsBody: queuedSmsBody } = await prepareCampaignSend({ row, subject, messageBody, smsBody, audience });
 
     try {
       await notifyGrok({ tab: "Campaigns", rows: [row], kind, channel, smsBody: queuedSmsBody });

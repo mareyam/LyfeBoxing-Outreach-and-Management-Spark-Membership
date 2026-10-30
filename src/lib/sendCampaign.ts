@@ -24,6 +24,7 @@ export async function prepareCampaignSend(input: {
   subject?: string;
   messageBody?: string;
   smsBody?: string;
+  audience?: string;
 }): Promise<{ notes: string; kind: "winback" | "trial" | "campaign"; channel: string; smsBody: string }> {
   const draft = await getCampaignDraft(input.row);
   if (!draft.campaignName.trim()) {
@@ -39,7 +40,7 @@ export async function prepareCampaignSend(input: {
   }
 
   const kind = kindFromCampaignNotes(draft.notes);
-  let audience: string | undefined;
+  let audience: string | undefined = input.audience;
   if (kind === "winback" || kind === "trial") {
     const prefix = kind === "winback" ? "winback:" : "trial:";
     const name = draft.notes.slice(prefix.length).trim();
@@ -63,7 +64,7 @@ export async function prepareCampaignSend(input: {
   // Already-queued rows are a re-notify: don't rewrite the draft, but do
   // fill in a missing single-contact audience before Grok looks again.
   if (status === "Draft" || status === "Error") {
-    await updateCampaignContent(input.row, { subject, messageBody, smsBody });
+    await updateCampaignContent(input.row, { subject, messageBody, smsBody, audience: input.audience });
   }
 
   await markCampaignQueued(input.row, audience);

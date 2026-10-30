@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const row = Number(body?.row);
-    const { subject, messageBody, smsBody } = body ?? {};
+    const { subject, messageBody, smsBody, audience } = body ?? {};
 
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
@@ -66,7 +66,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "messageBody or smsBody is required." }, { status: 400 });
     }
 
-    await updateCampaignContent(row, { subject: subject ?? "", messageBody: messageBody ?? "", smsBody });
+    await updateCampaignContent(row, { subject: subject ?? "", messageBody: messageBody ?? "", smsBody, audience });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof SheetsNotConfiguredError) {
