@@ -8,7 +8,7 @@ export async function proxy(req: NextRequest) {
   if (!password) return NextResponse.next();
 
   const { pathname } = req.nextUrl;
-  if (pathname === "/login" || pathname === "/api/login") {
+  if (pathname === "/login" || pathname === "/api/login" || pathname.startsWith("/api/cron/")) {
     return NextResponse.next();
   }
 

@@ -314,6 +314,70 @@ export async function updateTabRowCells(
   });
 }
 
+function quotedTab(tabName: string): string {
+  return `'${tabName.replace(/'/g, "''")}'`;
+}
+
+/** Adds a tab when it is missing, then writes the header row if the tab is empty. */
+export async function ensureTab(tabName: string, headers: string[]): Promise<void> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  const titles = (meta.data.sheets ?? []).map((sheet) => sheet.properties?.title);
+  if (!titles.includes(tabName)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+    });
+  }
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1:ZZ1`,
+  });
+  const existing = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim()).filter(Boolean);
+  if (existing.length === 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(tabName)}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [headers] },
+    });
+    return;
+  }
+  await ensureHeaders(tabName, headers);
+}
+
+/** Appends any header names that are not already on row 1, at the end, without reordering. */
+export async function ensureHeaders(tabName: string, headers: string[]): Promise<void> {
+  const sheets = getSheetsClient();
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1:ZZ1`,
+  });
+  const existing = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+  const missing = headers.filter((header) => header && !existing.some((have) => have.toLowerCase() === header.toLowerCase()));
+  if (missing.length === 0 || existing.every((cell) => !cell)) return;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!${columnLetter(existing.length)}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [missing] },
+  });
+}
+
+export async function appendTabRow(tabName: string, headers: string[], values: Record<string, string>): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [headers.map((header) => values[header] ?? "")] },
+  });
+}
+
 export async function appendAppointmentRequest(input: {
   date: string;
   time: string;

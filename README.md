@@ -10,7 +10,15 @@ Set these on the Vercel project (Production) and in `.env.local` for local dev. 
 | --- | --- | --- |
 | `GROK_WEBHOOK_URL` | Yes, for Send | URL the server POSTs when a row is queued. Body: `{ tab, rows, kind, site: "lyfe-boxing", queuedAt }`. |
 | `GROK_WEBHOOK_AUTH` | Yes, for Send | Full `Authorization` header value sent with that POST (for example `Bearer <token>`). |
-| `SITE_PASSWORD` | No | When set, every page and `/api` route asks for this password on `/login` and then stores an HttpOnly cookie. The check lives in `src/proxy.ts` (Next.js 16's middleware). When unset, the site stays open. |
+| `SITE_PASSWORD` | No | When set, every page and `/api` route asks for this password on `/login` and then stores an HttpOnly cookie. The check lives in `src/proxy.ts` (Next.js 16's middleware). When unset, the site stays open. `/api/cron/*` skips the password and uses `CRON_SECRET` instead. |
+| `ANTHROPIC_API_KEY` | Yes, for AI drafts | Claude key used by campaign "Generate with AI", lead "Generate draft", and the lead-sequence cron. |
+| `TRIAL_BOOKING_URL` | No | Exact trial-booking link inserted into every lead draft. If unset, drafts use the Trial link stored on the Playbook sheet tab. |
+| `CRON_SECRET` | Yes, for the cron | Shared secret. Vercel Cron calls `GET /api/cron/lead-sequence` with `Authorization: Bearer <CRON_SECRET>` every 3 hours (`0 */3 * * *` in `vercel.json`). The route returns 401 without it. |
+| `AUTO_SEND_STEP1` | No | Default off. Set to `true` or `1` to let the cron queue day-1 drafts and call the Grok webhook. Later steps are never auto-sent. |
+
+Lead follow-up reads the `Leads` and `Digest` tabs. The cron writes `Email Draft` / `Email Status` and advances `Sequence Step` and `Next Follow-up Date`. It does not send mail itself. Grok writes `Last Contacted` after a successful send. The Playbook page stores tone, offers, prices, FAQs, and the trial link on a `Playbook` tab (created automatically). Edits that differ from the AI original are appended to an `Examples` tab and the five newest are included in later prompts.
+
+Hobby Vercel plans only run cron jobs once a day. The 3-hour schedule needs a plan that allows it.
 
 Google Sheets (`GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SHEETS_CLIENT_EMAIL`, `GOOGLE_SHEETS_PRIVATE_KEY`) are also required for live data. See `.env.example`.
 
