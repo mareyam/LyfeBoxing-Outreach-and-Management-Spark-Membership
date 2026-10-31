@@ -649,7 +649,17 @@ type MappedMember = {
 const PLAN_BAR_COLORS = ["bg-indigo-500", "bg-blue-500", "bg-amber-400", "bg-pink-400", "bg-emerald-400"];
 const PLAN_DOT_COLORS = ["bg-indigo-500", "bg-blue-500", "bg-amber-400", "bg-pink-400", "bg-emerald-400", "bg-neutral-300"];
 
-function PlanBreakdownChart({ planCounts, totalPlans }: { planCounts: [string, number][]; totalPlans: number }) {
+function PlanBreakdownChart({
+  planCounts,
+  totalPlans,
+  selectedPlan,
+  onSelectPlan,
+}: {
+  planCounts: [string, number][];
+  totalPlans: number;
+  selectedPlan: string;
+  onSelectPlan: (plan: string) => void;
+}) {
   const top5 = planCounts.slice(0, 5);
   const otherCount = planCounts.slice(5).reduce((sum, [, count]) => sum + count, 0);
   const segments = otherCount > 0 ? [...top5, ["Other", otherCount] as [string, number]] : top5;
@@ -662,22 +672,43 @@ function PlanBreakdownChart({ planCounts, totalPlans }: { planCounts: [string, n
         <p className="text-sm text-neutral-400">Top 5 of {totalPlans}</p>
       </div>
       <div className="flex h-2.5 w-full rounded-full overflow-hidden bg-neutral-100">
-        {segments.map(([label, count], i) => (
-          <div
-            key={label}
-            className={i < 5 ? PLAN_BAR_COLORS[i] : "bg-neutral-300"}
-            style={{ width: `${(count / total) * 100}%` }}
-            title={`${label} · ${count}`}
-          />
-        ))}
+        {segments.map(([label, count], i) => {
+          const clickable = label !== "Other";
+          const isActive = selectedPlan === label;
+          return (
+            <button
+              key={label}
+              type="button"
+              disabled={!clickable}
+              onClick={() => onSelectPlan(isActive ? "" : label)}
+              className={`${i < 5 ? PLAN_BAR_COLORS[i] : "bg-neutral-300"} ${clickable ? "cursor-pointer" : "cursor-default"} ${
+                isActive ? "ring-2 ring-inset ring-neutral-900/40" : ""
+              }`}
+              style={{ width: `${(count / total) * 100}%` }}
+              title={`${label} · ${count}`}
+            />
+          );
+        })}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4">
-        {segments.map(([label, count], i) => (
-          <span key={label} className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
-            <span className={`h-2 w-2 rounded-full ${PLAN_DOT_COLORS[i] ?? "bg-neutral-300"}`} />
-            {label} · {count}
-          </span>
-        ))}
+        {segments.map(([label, count], i) => {
+          const clickable = label !== "Other";
+          const isActive = selectedPlan === label;
+          return (
+            <button
+              key={label}
+              type="button"
+              disabled={!clickable}
+              onClick={() => onSelectPlan(isActive ? "" : label)}
+              className={`inline-flex items-center gap-1.5 text-xs ${
+                isActive ? "text-neutral-900 font-semibold" : "text-neutral-600"
+              } ${clickable ? "hover:text-neutral-900" : ""}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${PLAN_DOT_COLORS[i] ?? "bg-neutral-300"}`} />
+              {label} · {count}
+            </button>
+          );
+        })}
       </div>
     </Card>
   );
@@ -691,6 +722,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   const [planFilter, setPlanFilter] = useState("");
   const [expiresFilter, setExpiresFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [joinedThisMonthOnly, setJoinedThisMonthOnly] = useState(false);
   const [nextPaymentFilter, setNextPaymentFilter] = useState("");
   const [staffFilter, setStaffFilter] = useState("");
   const [sortBy, setSortBy] = useState<MembershipsSort>("name-asc");
@@ -713,10 +745,11 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
 
   // eslint-disable-next-line react-hooks/purity -- "joined this month" is a point-in-time read of the clock, not cached state
   const now = new Date();
-  const joinedThisMonth = mapped.filter((m) => {
+  function isJoinedThisMonth(m: MappedMember): boolean {
     const d = parseSlashDate(m.signed);
     return d !== null && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }).length;
+  }
+  const joinedThisMonth = mapped.filter(isJoinedThisMonth).length;
 
   const planCounts = countBy(mapped, (m) => m.membership);
   const programGroups = new Set(planCounts.map(([plan]) => plan.split(" ")[0])).size;
@@ -735,6 +768,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
     if (planFilter && m.membership !== planFilter) return false;
     if (expiresFilter && m.expires !== expiresFilter) return false;
     if (overdueOnly && parseMoney(m.overdue) <= 0) return false;
+    if (joinedThisMonthOnly && !isJoinedThisMonth(m)) return false;
     if (nextPaymentFilter && m.nextPayment !== nextPaymentFilter) return false;
     if (staffFilter && m.staff !== staffFilter) return false;
     return true;
@@ -755,11 +789,15 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
 
   const { pageItems, page, setPage, totalPages } = usePagination(sorted);
 
-  const activeFilterCount = [planFilter, expiresFilter, nextPaymentFilter, staffFilter].filter(Boolean).length + (overdueOnly ? 1 : 0);
+  const activeFilterCount =
+    [planFilter, expiresFilter, nextPaymentFilter, staffFilter].filter(Boolean).length +
+    (overdueOnly ? 1 : 0) +
+    (joinedThisMonthOnly ? 1 : 0);
   function clearFilters() {
     setPlanFilter("");
     setExpiresFilter("");
     setOverdueOnly(false);
+    setJoinedThisMonthOnly(false);
     setNextPaymentFilter("");
     setStaffFilter("");
   }
@@ -768,12 +806,20 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-neutral-500">Total members</p>
-          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{mapped.length}</p>
+          <button onClick={clearFilters} className="text-left w-full">
+            <p className="text-sm text-neutral-500">Total members</p>
+            <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{mapped.length}</p>
+          </button>
           {joinedThisMonth > 0 && (
-            <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 mt-2">
+            <button
+              onClick={() => {
+                clearFilters();
+                setJoinedThisMonthOnly(true);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 mt-2"
+            >
               <ArrowUp className="h-3 w-3" strokeWidth={2.5} /> {joinedThisMonth} joined this month
-            </p>
+            </button>
           )}
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
@@ -790,6 +836,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
         </div>
         <button
           onClick={() => {
+            clearFilters();
             setOverdueOnly(true);
             setFilterOpen(false);
           }}
@@ -803,7 +850,15 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
         </button>
       </div>
 
-      <PlanBreakdownChart planCounts={planCounts} totalPlans={planCounts.length} />
+      <PlanBreakdownChart
+        planCounts={planCounts}
+        totalPlans={planCounts.length}
+        selectedPlan={planFilter}
+        onSelectPlan={(plan) => {
+          clearFilters();
+          setPlanFilter(plan);
+        }}
+      />
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
