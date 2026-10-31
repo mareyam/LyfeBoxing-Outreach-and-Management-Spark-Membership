@@ -823,6 +823,24 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
 
 const WINBACK_CONTEXT_HINT = "This is a win-back email to a former member who cancelled their membership.";
 
+const CATEGORY_COLORS = [
+  "bg-blue-50 text-blue-700",
+  "bg-rose-50 text-rose-700",
+  "bg-amber-50 text-amber-700",
+  "bg-purple-50 text-purple-700",
+  "bg-emerald-50 text-emerald-700",
+  "bg-indigo-50 text-indigo-700",
+  "bg-pink-50 text-pink-700",
+];
+
+/** Stable color per category name, cycling through a fixed palette — "Not Assigned" always reads neutral. */
+function categoryColor(category: string): string {
+  if (!category || category === "Not Assigned") return "bg-neutral-100 text-neutral-600";
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
+  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
+}
+
 function winbackTag(name: string): string {
   return `winback:${name}`;
 }
@@ -1036,29 +1054,28 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-2 font-medium w-6"></th>
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Email</th>
-              <th className="py-2 pr-4 font-medium">Membership</th>
-              <th className="py-2 pr-4 font-medium">Signed</th>
-              <th className="py-2 pr-4 font-medium">Cancelled</th>
-              <th className="py-2 pr-4 font-medium">Category</th>
-              <th className="py-2 pr-4 font-medium">Reason</th>
-              <th className="py-2 pr-4 font-medium">Win-back draft</th>
+            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+              <th className="py-3 pr-2 w-6"></th>
+              <th className="py-3 pr-4">Member</th>
+              <th className="py-3 pr-4">Reason Category</th>
+              <th className="py-3 pr-4">Plan</th>
+              <th className="py-3 pr-4">Status</th>
+              <th className="py-3 pr-4">Actions</th>
             </tr>
           </thead>
           <tbody>
             {pageItems.map((c, i) => {
               const canSelect = selectableNames.includes(c.name);
+              const eligible = isWinbackEligible(c.cancelledDate);
+              const campaign = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
               return (
                 <tr
                   key={`${c.name}-${i}`}
                   className={`border-b border-neutral-50 last:border-0 align-top ${
-                    campaigns?.find((camp) => camp.notes === winbackTag(c.name))?.status === "Draft" ? "bg-amber-50/60" : ""
+                    campaign?.status === "Draft" ? "bg-amber-50/60" : ""
                   }`}
                 >
-                  <td className="py-2.5 pr-2">
+                  <td className="py-3 pr-2">
                     {canSelect && (
                       <input
                         type="checkbox"
@@ -1068,30 +1085,43 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                       />
                     )}
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                  <td className="py-3 pr-4 whitespace-nowrap">
                     <span className="flex items-center gap-2.5">
                       <Avatar name={c.name} size="sm" />
-                      {c.name || "—"}
+                      <span>
+                        <span className="block text-neutral-900 font-semibold">{c.name || "—"}</span>
+                        <span className="block text-xs text-neutral-400">{emailFor(c.name, c.email) || "—"}</span>
+                      </span>
                     </span>
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{emailFor(c.name, c.email) || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.cancelledDate || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.quitCategory || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 max-w-xs break-words">{c.reason || "—"}</td>
-                  <td className="py-2.5 pr-4 whitespace-nowrap">
-                    {isWinbackEligible(c.cancelledDate) ? (
+                  <td className="py-3 pr-4">
+                    <span
+                      className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
+                        c.quitCategory
+                      )}`}
+                    >
+                      {c.quitCategory || c.reason || "Not Assigned"}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 text-neutral-700 whitespace-nowrap">{c.membership || "—"}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${eligible ? "text-amber-600" : "text-neutral-400"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${eligible ? "bg-amber-500" : "bg-neutral-300"}`} />
+                      {eligible ? "Win-back eligible" : "Closed"}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    {eligible ? (
                       <WinbackDraftCell
                         name={c.name}
                         hasEmail={!!emailFor(c.name, c.email)}
-                        campaign={campaigns?.find((camp) => camp.notes === winbackTag(c.name))}
+                        campaign={campaign}
                         brief={brief}
                         onGenerated={loadCampaigns}
                         onOpen={() => setOpenDraftFor(c.name)}
                       />
                     ) : (
-                      <span className="text-xs text-neutral-300">Not eligible yet</span>
+                      <span className="text-sm font-semibold text-neutral-400">Details</span>
                     )}
                   </td>
                 </tr>
@@ -1327,7 +1357,7 @@ function WinbackDraftCell({
           }
         }}
         disabled={generating}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
       >
         <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
         {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
@@ -1339,12 +1369,8 @@ function WinbackDraftCell({
 
   return (
     <div className="flex items-center gap-1.5">
-      <button
-        onClick={onOpen}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-      >
-        {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-        {isNew ? "New draft" : campaign.status}
+      <button onClick={onOpen} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+        {isNew ? "Contact" : campaign.status}
       </button>
       {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
     </div>
