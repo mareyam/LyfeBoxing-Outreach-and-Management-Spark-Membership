@@ -907,6 +907,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [brief, setBrief] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [campaignOpen, setCampaignOpen] = useState(false);
   const [membershipFilter, setMembershipFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
@@ -1038,29 +1039,38 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
           </span>
         </div>
-        <MonthSelector />
-      </div>
-
-      <div className="mb-6">
-        <div className="w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
-          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
-            AI CAMPAIGN
-          </span>
-          <p className="text-lg font-semibold mt-3">Win-back Members</p>
-          <p className="text-sm text-blue-100 mt-1">
-            {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized re-engagement
-            drafts to send them automatically.
-          </p>
-          <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="e.g. Offer a free class..."
-            rows={2}
-            className="w-full rounded-xl bg-blue-600/60 border border-blue-400/40 px-3 py-2 text-sm text-white placeholder:text-blue-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-          />
-          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-blue-700 [&_button]:hover:bg-blue-50">
-            <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+        <div className="flex items-center gap-2">
+          <MonthSelector />
+          <div className="relative">
+            <button
+              onClick={() => setCampaignOpen((o) => !o)}
+              className="inline-flex items-center rounded-full bg-blue-700 px-3.5 py-2 text-xs font-semibold tracking-wide text-white hover:bg-blue-800"
+            >
+              AI CAMPAIGN
+            </button>
+            {campaignOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-20 w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-lg">
+                <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+                  AI CAMPAIGN
+                </span>
+                <p className="text-lg font-semibold mt-3">Win-back Members</p>
+                <p className="text-sm text-blue-100 mt-1">
+                  {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized
+                  re-engagement drafts to send them automatically.
+                </p>
+                <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
+                <textarea
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  placeholder="e.g. Offer a free class..."
+                  rows={2}
+                  className="w-full rounded-xl bg-blue-600/60 border border-blue-400/40 px-3 py-2 text-sm text-white placeholder:text-blue-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+                />
+                <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-blue-700 [&_button]:hover:bg-blue-50">
+                  <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
