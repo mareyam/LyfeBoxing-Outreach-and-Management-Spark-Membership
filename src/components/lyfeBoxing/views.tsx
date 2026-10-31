@@ -1072,7 +1072,7 @@ const CATEGORY_COLORS = [
 ];
 
 /** Stable color per category name, cycling through a fixed palette — "Not Assigned" always reads neutral. */
-function categoryColor(category: string): string {
+export function categoryColor(category: string): string {
   if (!category || category === "Not Assigned") return "bg-neutral-100 text-neutral-600";
   let hash = 0;
   for (let i = 0; i < category.length; i++) hash = (hash * 31 + category.charCodeAt(i)) >>> 0;
