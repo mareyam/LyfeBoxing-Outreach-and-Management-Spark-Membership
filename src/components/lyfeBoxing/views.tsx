@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowDownToLine,
   ArrowRight,
   ArrowUp,
   BookOpen,
@@ -5358,23 +5357,14 @@ export function WeeklySummaryView() {
         <span>›</span>
         <span className="text-neutral-600 font-medium">Summary</span>
       </div>
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Monthly Summary</h1>
-          <p className="text-base text-neutral-500 mt-2 max-w-2xl">
-            Key numbers, plus a month-by-month recap since the first member joined.
-          </p>
-          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
-            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets (Summary + more)
-          </span>
-        </div>
-        <button
-          onClick={() => window.print()}
-          className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-        >
-          <ArrowDownToLine className="h-4 w-4" strokeWidth={1.75} />
-          Download PDF
-        </button>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Monthly Summary</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+          Key numbers, plus a month-by-month recap since the first member joined.
+        </p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets (Summary + more)
+        </span>
       </div>
       {loading && <LoadingCard />}
       {!loading && notConfigured && <SetupNeeded />}
