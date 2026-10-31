@@ -596,8 +596,21 @@ function SheetGate({
 
 export function MembershipsView() {
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="Memberships" subtitle="Live roster from the Spark Memberships sheet, grouped by plan." tool="Google Sheets (All Memberships)" />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Memberships</span>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Memberships</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Live roster from the Spark Memberships sheet, grouped by plan.</p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
       <Link href="/lyfe-boxing/playbook" className="group block mb-6">
         <Card className="group-hover:border-neutral-300 transition-colors">
           <div className="flex items-center justify-between gap-4">
@@ -626,9 +639,14 @@ type MappedMember = {
   staff: string;
 };
 
+type MembershipsSort = "name-asc" | "plan-asc" | "overdue-desc";
+
 function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
-  const [activePlan, setActivePlan] = useState<string | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [planFilter, setPlanFilter] = useState("");
+  const [staffFilter, setStaffFilter] = useState("");
+  const [sortBy, setSortBy] = useState<MembershipsSort>("name-asc");
 
   const mapped: MappedMember[] = rows.map((r) => ({
     name: findField(r, "name", "member", "member name"),
@@ -643,16 +661,40 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   const activeCount = mapped.filter((m) => m.expires.toLowerCase().includes("open")).length;
   const overdueCount = mapped.filter((m) => parseMoney(m.overdue) > 0).length;
 
-  const q = query.trim().toLowerCase();
-  const filtered = q ? mapped.filter((m) => m.name.toLowerCase().includes(q) || m.membership.toLowerCase().includes(q)) : mapped;
+  const planOptions = Array.from(new Set(mapped.map((m) => m.membership))).sort();
+  const staffOptions = Array.from(new Set(mapped.map((m) => m.staff).filter(Boolean))).sort();
 
-  const byPlan = new Map<string, MappedMember[]>();
-  for (const m of filtered) {
-    const list = byPlan.get(m.membership) ?? [];
-    list.push(m);
-    byPlan.set(m.membership, list);
+  const q = query.trim().toLowerCase();
+  const filtered = mapped.filter((m) => {
+    if (q) {
+      const matches = m.name.toLowerCase().includes(q) || m.membership.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (planFilter && m.membership !== planFilter) return false;
+    if (staffFilter && m.staff !== staffFilter) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "name-asc":
+        return a.name.localeCompare(b.name);
+      case "plan-asc":
+        return a.membership.localeCompare(b.membership);
+      case "overdue-desc":
+        return parseMoney(b.overdue) - parseMoney(a.overdue);
+      default:
+        return 0;
+    }
+  });
+
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
+
+  const activeFilterCount = [planFilter, staffFilter].filter(Boolean).length;
+  function clearFilters() {
+    setPlanFilter("");
+    setStaffFilter("");
   }
-  const plans = Array.from(byPlan.entries()).sort((a, b) => b[1].length - a[1].length);
 
   return (
     <>
@@ -662,71 +704,141 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
         <Stat label="Open-ended" value={activeCount} />
         <Stat label="Overdue" value={overdueCount} />
       </div>
-      <input
-        type="text"
-        placeholder="Search by name or plan..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">
-        Showing {filtered.length} of {mapped.length} members across {plans.length} plans
-      </p>
-      {plans.length === 0 ? (
-        <Card className="text-center py-10 text-sm text-neutral-500">No members found.</Card>
-      ) : (
-        <div className="space-y-2">
-          {plans.map(([plan, members]) => (
-            <details
-              key={plan}
-              open={activePlan === plan || (activePlan === null && plans[0][0] === plan)}
-              onToggle={(e) => {
-                if ((e.target as HTMLDetailsElement).open) setActivePlan(plan);
-              }}
-              className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden"
-            >
-              <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
-                <div>
-                  <p className="text-sm font-semibold text-neutral-900">{plan}</p>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    {members.length} member{members.length === 1 ? "" : "s"}
-                  </p>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <p className="text-base font-semibold text-neutral-900">Member List</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setFilterOpen((o) => !o)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                <Filter className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              {filterOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-10 w-72 rounded-lg border border-neutral-200 bg-white shadow-md p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Plan</label>
+                    <select
+                      value={planFilter}
+                      onChange={(e) => setPlanFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All plans</option>
+                      {planOptions.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Staff</label>
+                    <select
+                      value={staffFilter}
+                      onChange={(e) => setStaffFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All staff</option>
+                      {staffOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                      Clear filters
+                    </button>
+                  )}
                 </div>
-                <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
-              </summary>
-              <div className="border-t border-neutral-100 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-neutral-400 border-b border-neutral-100">
-                      <th className="py-2 pl-5 pr-4 font-medium">Name</th>
-                      <th className="py-2 pr-4 font-medium">Expires</th>
-                      <th className="py-2 pr-4 font-medium">Overdue</th>
-                      <th className="py-2 pr-4 font-medium">Next Payment</th>
-                      <th className="py-2 pr-5 font-medium">Staff</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.map((m, i) => (
-                      <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                        <td className="py-2.5 pl-5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
-                          <span className="flex items-center gap-2.5">
-                            <Avatar name={m.name} size="sm" />
-                            {m.name || "—"}
-                          </span>
-                        </td>
-                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires || "—"}</td>
-                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.overdue || "—"}</td>
-                        <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment || "—"}</td>
-                        <td className="py-2.5 pr-5 text-neutral-500 whitespace-nowrap">{m.staff || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          ))}
+              )}
+            </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as MembershipsSort)}
+              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+            >
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="plan-asc">Plan (A–Z)</option>
+              <option value="overdue-desc">Overdue (High–Low)</option>
+            </select>
+            <div className="relative w-56 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+              <input
+                type="text"
+                placeholder="Search by name or plan..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+            </div>
+          </div>
         </div>
-      )}
+        <table className="w-full text-sm table-fixed">
+          <thead>
+            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+              <th className="py-3 pr-4 w-[28%]">Member</th>
+              <th className="py-3 pr-4 w-[18%]">Plan</th>
+              <th className="py-3 pr-4 w-[14%]">Expires</th>
+              <th className="py-3 pr-4 w-[14%]">Overdue</th>
+              <th className="py-3 pr-4 w-[14%]">Next Payment</th>
+              <th className="py-3 pr-4 w-[12%]">Staff</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map((m, i) => (
+              <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <td className="py-3 pr-4">
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Avatar name={m.name} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
+                    </span>
+                  </span>
+                </td>
+                <td className="py-3 pr-4">
+                  <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.membership)}`}>
+                    {m.membership}
+                  </span>
+                </td>
+                <td className="py-3 pr-4 text-neutral-700 truncate">{m.expires || "—"}</td>
+                <td className="py-3 pr-4 text-neutral-700 truncate">{m.overdue || "—"}</td>
+                <td className="py-3 pr-4 text-neutral-700 truncate">{m.nextPayment || "—"}</td>
+                <td className="py-3 pr-4 text-neutral-500 truncate">{m.staff || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
+          <p className="text-sm text-neutral-500">
+            Showing {pageItems.length} of {filtered.length} members
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page <= 1}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            </button>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page >= totalPages}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      </Card>
     </>
   );
 }
@@ -737,15 +849,33 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
 
 export function AllContactsView() {
   return (
-    <div className="max-w-5xl">
-      <PageHeader title="All Contacts" subtitle="Everyone in the Spark Contacts sheet." tool="Google Sheets (Contacts)" />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">All Contacts</span>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">All Contacts</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Everyone in the Spark Contacts sheet.</p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
       <SheetGate tab="Contacts">{(rows) => <ContactsTable rows={rows} />}</SheetGate>
     </div>
   );
 }
 
+type ContactsSort = "name-asc" | "name-desc" | "type-asc";
+
 function ContactsTable({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [sortBy, setSortBy] = useState<ContactsSort>("name-asc");
 
   const mapped = rows.map((r) => ({
     name: findField(r, "name"),
@@ -754,63 +884,170 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
     contactType: findField(r, "contact type"),
   }));
 
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? mapped.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.contactType.toLowerCase().includes(q))
-    : mapped;
+  const typeOptions = Array.from(new Set(mapped.map((c) => c.contactType || "Not Assigned"))).sort();
 
-  const { pageItems, page, setPage, totalPages } = usePagination(filtered);
+  const q = query.trim().toLowerCase();
+  const filtered = mapped.filter((c) => {
+    if (q) {
+      const matches = c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.contactType.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (typeFilter && (c.contactType || "Not Assigned") !== typeFilter) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "name-asc":
+        return a.name.localeCompare(b.name);
+      case "name-desc":
+        return b.name.localeCompare(a.name);
+      case "type-asc":
+        return (a.contactType || "Not Assigned").localeCompare(b.contactType || "Not Assigned");
+      default:
+        return 0;
+    }
+  });
+
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
+
+  const activeFilterCount = [typeFilter].filter(Boolean).length;
+  function clearFilters() {
+    setTypeFilter("");
+  }
 
   return (
-    <>
-      <div className="flex items-center gap-3 mb-4">
-        <input
-          type="text"
-          placeholder="Search by name, email, or type..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-        />
-        <span className="shrink-0 text-sm text-neutral-500">
-          Total contacts: <span className="font-semibold text-neutral-900">{mapped.length}</span>
-        </span>
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <p className="text-base font-semibold text-neutral-900">
+          Contact List <span className="text-neutral-400 font-normal">({mapped.length} total)</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setFilterOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            >
+              <Filter className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+              Filter
+              {activeFilterCount > 0 && (
+                <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            {filterOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-10 w-72 rounded-lg border border-neutral-200 bg-white shadow-md p-4 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 block mb-1">Contact Type</label>
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                  >
+                    <option value="">All types</option>
+                    {typeOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {activeFilterCount > 0 && (
+                  <button onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as ContactsSort)}
+            className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+          >
+            <option value="name-asc">Name (A–Z)</option>
+            <option value="name-desc">Name (Z–A)</option>
+            <option value="type-asc">Type (A–Z)</option>
+          </select>
+          <div className="relative w-56 shrink-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+            <input
+              type="text"
+              placeholder="Search contacts..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            />
+          </div>
+        </div>
       </div>
-      <p className="text-sm text-neutral-400 mb-3">
-        Showing {filtered.length} of {mapped.length} contacts
-      </p>
-      {filtered.length === 0 ? (
-        <Card className="text-center py-10 text-sm text-neutral-500">No contacts found.</Card>
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-neutral-400 border-b border-neutral-100">
-                <th className="py-2 pr-4 font-medium">Name</th>
-                <th className="py-2 pr-4 font-medium">Email</th>
-                <th className="py-2 pr-4 font-medium">Phone</th>
-                <th className="py-2 pr-4 font-medium">Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((c, i) => (
-                <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
-                    <span className="flex items-center gap-2.5">
-                      <Avatar name={c.name} size="sm" />
-                      {c.name || "—"}
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.email || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.phone || "—"}</td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.contactType || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
-        </Card>
-      )}
-    </>
+      <table className="w-full text-sm table-fixed">
+        <thead>
+          <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+            <th className="py-3 pr-4 w-[36%]">Contact</th>
+            <th className="py-3 pr-4 w-[20%]">Phone</th>
+            <th className="py-3 pr-4 w-[20%]">Type</th>
+            <th className="py-3 pr-4 w-[24%]">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pageItems.map((c, i) => (
+            <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+              <td className="py-3 pr-4">
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Avatar name={c.name} size="sm" />
+                  <span className="min-w-0">
+                    <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
+                    <span className="block text-xs text-neutral-400 truncate">{c.email || "—"}</span>
+                  </span>
+                </span>
+              </td>
+              <td className="py-3 pr-4 text-neutral-700 truncate">{c.phone || "—"}</td>
+              <td className="py-3 pr-4">
+                <span
+                  className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
+                    c.contactType
+                  )}`}
+                >
+                  {c.contactType || "Not Assigned"}
+                </span>
+              </td>
+              <td className="py-3 pr-4">
+                {c.email ? (
+                  <span className="text-blue-700 font-semibold text-sm">Contact</span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                    No email
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
+        <p className="text-sm text-neutral-500">
+          Showing {pageItems.length} of {filtered.length} contacts
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPage(page - 1)}
+            disabled={page <= 1}
+            className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+          </button>
+          <button
+            onClick={() => setPage(page + 1)}
+            disabled={page >= totalPages}
+            className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <ChevronRight className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }
 
