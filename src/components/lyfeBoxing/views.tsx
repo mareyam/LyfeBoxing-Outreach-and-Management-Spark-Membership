@@ -1823,18 +1823,37 @@ function rowToPastDueMember(r: SheetRow): PastDueMember {
 
 export function PastDueView() {
   return (
-    <div className="max-w-5xl">
-      <PageHeader title="Past Due" subtitle="Members behind on payment, with the draft collections email for each." tool="Google Sheets (Past Due)" />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Past Due</span>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Past Due</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Members behind on payment, with the draft collections email for each.</p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
       <SheetGate tab="Past Due">{(rows) => <PastDueList rows={rows} />}</SheetGate>
     </div>
   );
 }
+
+type PastDueSort = "overdue-desc" | "overdue-asc" | "name-asc" | "last-attempt-desc";
 
 function PastDueList({ rows }: { rows: SheetRow[] }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [members, setMembers] = useState<PastDueMember[]>(() => rows.map(rowToPastDueMember));
   const [brief, setBrief] = useState("");
+  const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sortBy, setSortBy] = useState<PastDueSort>("overdue-desc");
   const emailFor = useContactEmails();
 
   const refetch = useCallback(async () => {
@@ -1849,7 +1868,41 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
 
   const totalOwed = members.reduce((sum, m) => sum + parseMoney(m.totalOverdue), 0);
   usePollWhileQueued(members.some((m) => m.emailStatus === "Queued"), refetch);
-  const { pageItems, page, setPage, totalPages } = usePagination(members);
+
+  const statusOptions = Array.from(new Set(members.map((m) => m.emailStatus || "Not Assigned"))).sort();
+
+  const q = query.trim().toLowerCase();
+  const filtered = members.filter((m) => {
+    if (q) {
+      const matches = m.name.toLowerCase().includes(q) || emailFor(m.name, m.email).toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (statusFilter && (m.emailStatus || "Not Assigned") !== statusFilter) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "overdue-desc":
+        return parseMoney(b.totalOverdue) - parseMoney(a.totalOverdue);
+      case "overdue-asc":
+        return parseMoney(a.totalOverdue) - parseMoney(b.totalOverdue);
+      case "name-asc":
+        return a.name.localeCompare(b.name);
+      case "last-attempt-desc":
+        return (parseSlashDate(b.lastAttempt)?.getTime() ?? 0) - (parseSlashDate(a.lastAttempt)?.getTime() ?? 0);
+      default:
+        return 0;
+    }
+  });
+
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
+
+  const activeFilterCount = [statusFilter].filter(Boolean).length;
+  function clearFilters() {
+    setStatusFilter("");
+  }
+
   const open = openRow !== null ? members.find((m) => m.row === openRow) : undefined;
   const openEmail = open ? emailFor(open.name, open.email) : "";
 
@@ -1919,42 +1972,158 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
       {members.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No one is past due.</Card>
       ) : (
-        <>
-          <div className="space-y-3">
-            {pageItems.map((m) => (
-              <Card key={m.row} className={m.emailBody && (!m.emailStatus || m.emailStatus === "Draft") ? "bg-amber-50/40" : ""}>
-                <div className="flex items-center gap-3">
-                  {selectableRows.includes(m.row) && (
-                    <input
-                      type="checkbox"
-                      checked={selected.has(m.row)}
-                      onChange={() => toggleSelected(m.row)}
-                      className="rounded border-neutral-300"
-                    />
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <p className="text-base font-semibold text-neutral-900">Member List</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <button
+                  onClick={() => setFilterOpen((o) => !o)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                >
+                  <Filter className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                      {activeFilterCount}
+                    </span>
                   )}
-                  <div className="flex-1 flex items-center justify-between gap-4">
+                </button>
+                {filterOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-10 w-72 rounded-lg border border-neutral-200 bg-white shadow-md p-4 space-y-3">
                     <div>
-                      <p className="font-semibold text-neutral-900">{m.name || "Unnamed member"}</p>
-                      <p className="text-sm text-neutral-600 mt-0.5">{emailFor(m.name, m.email) || "No email"}</p>
-                      <p className="text-sm text-neutral-500 mt-0.5">
-                        {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "Amount not set"} overdue
-                        {m.lastAttempt ? ` · last attempt ${m.lastAttempt}` : ""}
-                      </p>
+                      <label className="text-xs font-medium text-neutral-500 block mb-1">Email Status</label>
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                      >
+                        <option value="">All statuses</option>
+                        {statusOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <PastDueDraftCell
-                      member={m}
-                      hasEmail={!!emailFor(m.name, m.email)}
-                      brief={brief}
-                      onGenerated={(c) => patchMember(m.row, c)}
-                      onOpen={() => setOpenRow(m.row)}
-                    />
+                    {activeFilterCount > 0 && (
+                      <button onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                        Clear filters
+                      </button>
+                    )}
                   </div>
-                </div>
-              </Card>
-            ))}
+                )}
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as PastDueSort)}
+                className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+              >
+                <option value="overdue-desc">Overdue Amount (High–Low)</option>
+                <option value="overdue-asc">Overdue Amount (Low–High)</option>
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="last-attempt-desc">Last Attempt (Newest)</option>
+              </select>
+              <div className="relative w-56 shrink-0">
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+                <input
+                  type="text"
+                  placeholder="Search members..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+                />
+              </div>
+            </div>
           </div>
-          <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
-        </>
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                <th className="py-3 pr-2 w-6"></th>
+                <th className="py-3 pr-4 w-[30%]">Member</th>
+                <th className="py-3 pr-4 w-[16%]">Overdue</th>
+                <th className="py-3 pr-4 w-[18%]">Last Attempt</th>
+                <th className="py-3 pr-4 w-[16%]">Status</th>
+                <th className="py-3 pr-4 w-[20%]">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((m) => (
+                <tr
+                  key={m.row}
+                  className={`border-b border-neutral-50 last:border-0 align-top ${
+                    m.emailBody && (!m.emailStatus || m.emailStatus === "Draft") ? "bg-amber-50/60" : ""
+                  }`}
+                >
+                  <td className="py-3 pr-2">
+                    {selectableRows.includes(m.row) && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(m.row)}
+                        onChange={() => toggleSelected(m.row)}
+                        className="rounded border-neutral-300"
+                      />
+                    )}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <Avatar name={m.name} size="sm" />
+                      <span className="min-w-0">
+                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "Unnamed member"}</span>
+                        <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 text-neutral-700 truncate">
+                    {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "—"}
+                  </td>
+                  <td className="py-3 pr-4 text-neutral-500 truncate">{m.lastAttempt || "—"}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.emailStatus)}`}>
+                      {m.emailStatus || "Not Assigned"}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4">
+                    {emailFor(m.name, m.email) ? (
+                      <PastDueDraftCell
+                        member={m}
+                        hasEmail={!!emailFor(m.name, m.email)}
+                        brief={brief}
+                        onGenerated={(c) => patchMember(m.row, c)}
+                        onOpen={() => setOpenRow(m.row)}
+                      />
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                        No email
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
+            <p className="text-sm text-neutral-500">
+              Showing {pageItems.length} of {filtered.length} members
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(page - 1)}
+                disabled={page <= 1}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+              </button>
+              <button
+                onClick={() => setPage(page + 1)}
+                disabled={page >= totalPages}
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronRight className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        </Card>
       )}
 
       {open && (
@@ -2128,27 +2297,18 @@ function PastDueDraftCell({
           }
         }}
         disabled={generating}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
       >
         <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-        {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
+        {generating ? "Drafting…" : error ? "Retry" : "Generate Draft"}
       </button>
     );
   }
 
-  const isNew = !member.emailStatus || member.emailStatus === "Draft";
-
   return (
-    <div className="flex items-center gap-1.5">
-      <button
-        onClick={onOpen}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-      >
-        {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-        {isNew ? "New draft" : member.emailStatus}
-      </button>
-      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
-    </div>
+    <button onClick={onOpen} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+      {!member.emailStatus || member.emailStatus === "Draft" ? "View Draft" : member.emailStatus}
+    </button>
   );
 }
 
