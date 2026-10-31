@@ -113,9 +113,9 @@ function AudiencePicker({ audience, onChange }: { audience: string; onChange: (a
   }
 
   return (
-    <div className="px-4 pt-4 pb-2 border-b border-neutral-100">
-      <label className="text-xs font-semibold text-neutral-700 block mb-1.5">Who should receive this sequence?</label>
-      <div className="flex gap-1.5 mb-2">
+    <div className="px-4 pt-4 pb-3 border-b border-neutral-100 bg-indigo-50/40">
+      <label className="text-xs font-semibold text-neutral-700 block mb-2">Who should receive this sequence?</label>
+      <div className="flex gap-1.5 mb-3">
         {([
           ["status", "By status / membership"],
           ["leads", "New leads"],
@@ -128,8 +128,10 @@ function AudiencePicker({ audience, onChange }: { audience: string; onChange: (a
               setMode(m);
               commit(m, status, membership, names);
             }}
-            className={`rounded-full border px-3 py-1 text-xs font-medium ${
-              mode === m ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              mode === m
+                ? "bg-indigo-700 text-white border-indigo-700"
+                : "border-neutral-200 bg-white text-neutral-600 hover:bg-indigo-50 hover:border-indigo-200"
             }`}
           >
             {label}
@@ -145,7 +147,7 @@ function AudiencePicker({ audience, onChange }: { audience: string; onChange: (a
               setStatus(e.target.value);
               commit(mode, e.target.value, membership, names);
             }}
-            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
@@ -159,7 +161,7 @@ function AudiencePicker({ audience, onChange }: { audience: string; onChange: (a
               setMembership(e.target.value);
               commit(mode, status, e.target.value, names);
             }}
-            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
           >
             {MEMBERSHIP_OPTIONS.map((m) => (
               <option key={m} value={m}>
@@ -176,8 +178,16 @@ function AudiencePicker({ audience, onChange }: { audience: string; onChange: (a
         <div className="max-h-32 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-2 space-y-1">
           {contacts.length === 0 && <p className="text-xs text-neutral-400">No contacts loaded.</p>}
           {contacts.map((c) => (
-            <label key={c.name} className="flex items-center gap-2 text-xs text-neutral-700">
-              <input type="checkbox" checked={names.includes(c.name)} onChange={() => toggleName(c.name)} className="rounded border-neutral-300" />
+            <label
+              key={c.name}
+              className="flex items-center gap-2 text-xs text-neutral-700 rounded-md px-1.5 py-1 hover:bg-indigo-50/60"
+            >
+              <input
+                type="checkbox"
+                checked={names.includes(c.name)}
+                onChange={() => toggleName(c.name)}
+                className="rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
+              />
               {c.name} <span className="text-neutral-400">{c.email || c.phone}</span>
             </label>
           ))}
@@ -205,12 +215,14 @@ const NODE_GAP_X = 260;
 function EmailNode({ data }: { data: FlowNodeData }) {
   const step = data.step as { type: "email"; templateRow: number; templateName: string; subject: string; body: string };
   return (
-    <div className="w-56 rounded-xl border border-neutral-200 bg-white shadow-sm p-3">
-      <Handle type="target" position={Position.Left} className="!bg-neutral-400" />
-      <Handle type="source" position={Position.Right} className="!bg-neutral-400" />
+    <div className="w-56 rounded-xl border border-indigo-100 bg-white shadow-sm p-3">
+      <Handle type="target" position={Position.Left} className="!bg-indigo-400" />
+      <Handle type="source" position={Position.Right} className="!bg-indigo-400" />
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-700">
-          <Mail className="h-3.5 w-3.5" strokeWidth={2} />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700">
+          <span className="h-5 w-5 rounded-md bg-indigo-50 flex items-center justify-center">
+            <Mail className="h-3 w-3 text-indigo-600" strokeWidth={2} />
+          </span>
           Email
         </div>
         <button onClick={data.onDelete} className="text-neutral-300 hover:text-red-600">
@@ -229,7 +241,7 @@ function EmailNode({ data }: { data: FlowNodeData }) {
             body: t?.body ?? "",
           });
         }}
-        className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10 nodrag"
+        className="w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 nodrag"
       >
         <option value="">Choose a template…</option>
         {data.templates.map((t) => (
@@ -248,12 +260,14 @@ const WAIT_UNITS: WaitUnit[] = ["seconds", "minutes", "hours", "days"];
 function WaitNode({ data }: { data: FlowNodeData }) {
   const step = data.step as { type: "wait"; amount: number; unit: WaitUnit };
   return (
-    <div className="w-44 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 shadow-sm p-3">
-      <Handle type="target" position={Position.Left} className="!bg-neutral-400" />
-      <Handle type="source" position={Position.Right} className="!bg-neutral-400" />
+    <div className="w-44 rounded-xl border border-dashed border-amber-200 bg-amber-50/40 shadow-sm p-3">
+      <Handle type="target" position={Position.Left} className="!bg-amber-400" />
+      <Handle type="source" position={Position.Right} className="!bg-amber-400" />
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-700">
-          <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
+          <span className="h-5 w-5 rounded-md bg-amber-100 flex items-center justify-center">
+            <Clock className="h-3 w-3 text-amber-600" strokeWidth={2} />
+          </span>
           Wait
         </div>
         <button onClick={data.onDelete} className="text-neutral-300 hover:text-red-600">
@@ -266,12 +280,12 @@ function WaitNode({ data }: { data: FlowNodeData }) {
           min={0}
           value={step.amount}
           onChange={(e) => data.onChange({ type: "wait", amount: Math.max(0, Number(e.target.value) || 0), unit: step.unit })}
-          className="w-14 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10 nodrag"
+          className="w-14 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-300 nodrag"
         />
         <select
           value={step.unit}
           onChange={(e) => data.onChange({ type: "wait", amount: step.amount, unit: e.target.value as WaitUnit })}
-          className="flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10 nodrag"
+          className="flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-300 nodrag"
         >
           {WAIT_UNITS.map((u) => (
             <option key={u} value={u}>
@@ -407,7 +421,7 @@ export default function SequenceBuilder({
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+          className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
         />
         <span className="text-xs text-neutral-400 ml-2">When the first email should go out. Leave blank to start immediately.</span>
       </div>
@@ -416,7 +430,7 @@ export default function SequenceBuilder({
           <button
             type="button"
             onClick={() => addNode("email")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             Add email
@@ -424,7 +438,7 @@ export default function SequenceBuilder({
           <button
             type="button"
             onClick={() => addNode("wait")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             Add wait
@@ -442,7 +456,7 @@ export default function SequenceBuilder({
             type="button"
             onClick={handleSave}
             disabled={saving || starting}
-            className="rounded-full border border-neutral-300 px-4 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-full border border-indigo-200 px-4 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save sequence"}
           </button>
