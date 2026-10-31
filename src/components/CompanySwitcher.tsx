@@ -12,7 +12,7 @@ export default function CompanySwitcher() {
 
   function selectLyfeBoxing() {
     setOpen(false);
-    router.push("/lyfe-boxing/weekly-summary");
+    router.push("/lyfe-boxing");
   }
 
   return (

@@ -5350,7 +5350,7 @@ export function WeeklySummaryView() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Summary" subtitle="Key numbers, plus a month-by-month recap since the first member joined." tool="Google Sheets (Summary + more)" />
+      <PageHeader title="Monthly Summary" subtitle="Key numbers, plus a month-by-month recap since the first member joined." tool="Google Sheets (Summary + more)" />
       {loading && <LoadingCard />}
       {!loading && notConfigured && <SetupNeeded />}
       {!loading && !notConfigured && firstError && firstError.status === "error" && <SheetErrorCard message={firstError.message} />}

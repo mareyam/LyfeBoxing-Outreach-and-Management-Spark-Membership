@@ -1,10 +1,6 @@
-import { Suspense } from "react";
-import { WeeklySummaryView } from "@/components/lyfeBoxing/views";
+import { redirect } from "next/navigation";
 
+// Weekly Summary is now the app's default page, renamed Monthly Summary — keep the old URL working.
 export default function Page() {
-  return (
-    <Suspense fallback={null}>
-      <WeeklySummaryView />
-    </Suspense>
-  );
+  redirect("/lyfe-boxing");
 }

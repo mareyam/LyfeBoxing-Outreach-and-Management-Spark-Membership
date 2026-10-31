@@ -1,5 +1,5 @@
-import { AllContactsView } from "@/components/lyfeBoxing/views";
+import { WeeklySummaryView } from "@/components/lyfeBoxing/views";
 
 export default function Page() {
-  return <AllContactsView />;
+  return <WeeklySummaryView />;
 }

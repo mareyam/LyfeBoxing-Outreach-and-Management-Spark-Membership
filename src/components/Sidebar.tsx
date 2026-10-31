@@ -27,12 +27,12 @@ type SidebarLinkDef = { label: string; href?: string; icon: LucideIcon };
 const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
   {
     heading: "Overview",
-    links: [{ href: "/lyfe-boxing/weekly-summary", label: "Summary", icon: BarChart2 }],
+    links: [{ href: "/lyfe-boxing", label: "Monthly Summary", icon: BarChart2 }],
   },
   {
     heading: "CRM & Members",
     links: [
-      { href: "/lyfe-boxing", label: "All Contacts", icon: Users },
+      { href: "/lyfe-boxing/contacts", label: "All Contacts", icon: Users },
       { href: "/lyfe-boxing/leads", label: "Leads", icon: UserPlus },
       { href: "/lyfe-boxing/memberships", label: "Memberships", icon: CreditCard },
     ],
