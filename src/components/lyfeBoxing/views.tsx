@@ -1193,17 +1193,16 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
           <thead>
             <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
               <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4 w-[26%]">Member</th>
-              <th className="py-3 pr-4 w-[20%]">Reason Category</th>
-              <th className="py-3 pr-4 w-[16%]">Plan</th>
-              <th className="py-3 pr-4 w-[20%]">Status</th>
-              <th className="py-3 pr-4 w-[14%]">Actions</th>
+              <th className="py-3 pr-4 w-[32%]">Member</th>
+              <th className="py-3 pr-4 w-[24%]">Reason Category</th>
+              <th className="py-3 pr-4 w-[20%]">Plan</th>
+              <th className="py-3 pr-4 w-[20%]">Actions</th>
             </tr>
           </thead>
           <tbody>
             {pageItems.map((c, i) => {
               const canSelect = selectableNames.includes(c.name);
-              const eligible = isWinbackEligible(c.cancelledDate);
+              const hasEmail = !!emailFor(c.name, c.email);
               const campaign = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
               return (
                 <tr
@@ -1242,23 +1241,18 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                   </td>
                   <td className="py-3 pr-4 text-neutral-700 truncate">{c.membership || "—"}</td>
                   <td className="py-3 pr-4">
-                    <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${eligible ? "text-amber-600" : "text-neutral-400"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${eligible ? "bg-amber-500" : "bg-neutral-300"}`} />
-                      {eligible ? "Win-back eligible" : "Closed"}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {eligible ? (
+                    {hasEmail ? (
                       <WinbackDraftCell
                         name={c.name}
-                        hasEmail={!!emailFor(c.name, c.email)}
                         campaign={campaign}
                         brief={brief}
                         onGenerated={loadCampaigns}
                         onOpen={() => setOpenDraftFor(c.name)}
                       />
                     ) : (
-                      <span className="text-sm font-semibold text-neutral-400">Details</span>
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                        No email
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -1496,14 +1490,12 @@ function GenerateAllWinbackButton({
 
 function WinbackDraftCell({
   name,
-  hasEmail,
   campaign,
   brief,
   onGenerated,
   onOpen,
 }: {
   name: string;
-  hasEmail: boolean;
   campaign: Campaign | undefined;
   brief: string;
   onGenerated: () => Promise<void>;
@@ -1544,20 +1536,15 @@ function WinbackDraftCell({
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
       >
         <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-        {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
+        {generating ? "Drafting…" : error ? "Retry" : "Generate Draft"}
       </button>
     );
   }
 
-  const isNew = campaign.status === "Draft";
-
   return (
-    <div className="flex items-center gap-1.5">
-      <button onClick={onOpen} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
-        {isNew ? "Contact" : campaign.status}
-      </button>
-      {isNew && !hasEmail && <span className="text-xs text-amber-600" title="No email on file">no email</span>}
-    </div>
+    <button onClick={onOpen} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+      Generate Draft
+    </button>
   );
 }
 
