@@ -967,16 +967,19 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <span>›</span>
         <span className="text-neutral-600 font-medium">Cancellations</span>
       </div>
-      <div className="mb-6">
-        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
-        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
-        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
-          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
-        </span>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
+          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+          </span>
+        </div>
+        <MonthSelector />
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div className="flex-1 min-w-0 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
+      <div className="mb-6">
+        <div className="w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
           <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
             AI CAMPAIGN
           </span>
@@ -997,7 +1000,6 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
           </div>
         </div>
-        <MonthSelector />
       </div>
 
       <Card>
