@@ -881,7 +881,7 @@ function FrequencyChart({ title, subtitle, data }: { title: string; subtitle: st
 
 export function CancelledView() {
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-[1600px]">
       <SheetGate tab="Cancelled (Oct)">{(rows) => <CancelledTable rows={rows} />}</SheetGate>
     </div>
   );
@@ -1077,7 +1077,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <MonthSelector />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-base font-semibold text-neutral-900">Member List</p>
