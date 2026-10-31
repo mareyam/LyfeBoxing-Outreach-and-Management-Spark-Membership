@@ -13,16 +13,22 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  FlaskConical,
   Filter,
+  Gift,
+  ListChecks,
   Mail,
   MessageSquare,
+  Percent,
   Plus,
   RefreshCw,
   Search,
   Send,
   Sparkles,
+  Trash2,
   Users,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
 import SequenceBuilder, { type SequenceStep } from "@/components/lyfeBoxing/SequenceBuilder";
@@ -3113,20 +3119,28 @@ export function CampaignsView() {
 
   return (
     <div className="max-w-6xl">
-      <PageHeader
-        title="Campaigns"
-        subtitle="Build a drag-and-drop email sequence — emails and wait steps, saved to Google Sheets for Grok to run."
-        tool="Google Sheets (Campaign Sequences)"
-      />
-
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-neutral-700">Sequences</h2>
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Campaigns</span>
+      </div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Campaign Sequences</h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">Build and manage drag-and-drop email sequences for automation.</p>
+          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Campaign Sequences (Source)
+          </span>
+        </div>
         {builderRow === null && (
           <button
             onClick={() => setBuilderRow("new")}
-            className="rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
+            className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-indigo-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-800"
           >
-            New sequence
+            <Plus className="h-4 w-4" strokeWidth={2} />
+            New Sequence
           </button>
         )}
       </div>
@@ -3156,6 +3170,10 @@ export function CampaignsView() {
         />
       )}
 
+      <div className="flex items-center gap-2 mb-3">
+        <ListChecks className="h-4 w-4 text-indigo-600" strokeWidth={1.75} />
+        <h2 className="text-base font-semibold text-neutral-900">Active Sequences</h2>
+      </div>
       {sequences && sequences.length === 0 && builderRow === null && (
         <p className="text-sm text-neutral-400 mb-6">No sequences yet. Create one above.</p>
       )}
@@ -3165,50 +3183,58 @@ export function CampaignsView() {
           const steps = safeParseSteps(s.nodes);
           const emailCount = steps.filter((st) => st.type === "email").length;
           const waitCount = steps.filter((st) => st.type === "wait").length;
+          const { Icon, bg, color } = templateIcon(s.name);
           return (
-            <Card key={s.row} className="hover:border-blue-200 transition-colors">
+            <Card key={s.row} className="hover:border-indigo-200 transition-colors">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-base font-semibold text-neutral-900">{s.name}</p>
-                  <p className="text-sm text-neutral-500 mt-0.5">
-                    {emailCount} email{emailCount === 1 ? "" : "s"} · {waitCount} wait step{waitCount === 1 ? "" : "s"}
-                    {s.audience && ` · ${s.audience}`}
-                    {s.startDate && ` · Starts ${s.startDate}`}
-                  </p>
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${bg}`}>
+                    <Icon className={`h-4 w-4 ${color}`} strokeWidth={1.75} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-neutral-900">{s.name}</p>
+                    <p className="text-sm text-neutral-500 mt-0.5">
+                      {emailCount} email{emailCount === 1 ? "" : "s"} · {waitCount} wait step{waitCount === 1 ? "" : "s"}
+                      {s.audience && ` · ${s.audience}`}
+                      {s.startDate && ` · Starts: ${s.startDate}`}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge>{s.status || "Draft"}</Badge>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${categoryColor(s.status || "Draft")}`}>
+                    {s.status || "Draft"}
+                  </span>
                   {!SEQUENCE_BLOCKED_FOR_START.has(s.status) && (
                     <button
                       onClick={() => handleStartNow(s.row)}
                       disabled={startingSeqRow === s.row}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 text-white px-3 py-1.5 text-xs font-semibold hover:bg-indigo-800 disabled:opacity-50"
                     >
-                      <Send className="h-3 w-3" strokeWidth={2} />
-                      {startingSeqRow === s.row ? "Starting…" : "Start now"}
+                      {startingSeqRow === s.row ? "Starting…" : "Start Now"}
                     </button>
                   )}
                   {SEQUENCE_IN_FLIGHT.has(s.status) && (
                     <button
                       onClick={() => handleStopSequence(s.row)}
                       disabled={startingSeqRow === s.row}
-                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      className="rounded-xl border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
                     >
                       {startingSeqRow === s.row ? "Stopping…" : "Stop"}
                     </button>
                   )}
                   <button
                     onClick={() => setBuilderRow(s.row)}
-                    className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                    className="rounded-xl border border-neutral-200 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDeleteSequence(s.row)}
                     disabled={deletingSeqRow === s.row}
-                    className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                    className="h-8 w-8 flex items-center justify-center rounded-xl border border-neutral-200 text-neutral-400 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                    title="Delete"
                   >
-                    {deletingSeqRow === s.row ? "Deleting…" : "Delete"}
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
                   </button>
                 </div>
               </div>
@@ -3217,7 +3243,10 @@ export function CampaignsView() {
         })}
       </div>
 
-      <h2 className="text-sm font-semibold text-neutral-700 mb-3">Campaign history</h2>
+      <div className="flex items-center gap-2 mb-3">
+        <RefreshCw className="h-4 w-4 text-indigo-600" strokeWidth={1.75} />
+        <h2 className="text-base font-semibold text-neutral-900">Campaign History</h2>
+      </div>
       {ranSequences.length === 0 && <p className="text-sm text-neutral-400 mb-10">No campaigns have run yet.</p>}
       <div className="space-y-3 mb-10">
         {ranSequences.map((s) => {
@@ -3226,14 +3255,21 @@ export function CampaignsView() {
           return (
             <Card key={s.row}>
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-base font-semibold text-neutral-900">{s.name}</p>
                   <p className="text-sm text-neutral-500 mt-0.5">
                     Started {s.startDate || "—"} · Step {s.currentStep || "0"} of {steps.filter((st) => st.type === "email").length}
                     {s.nextRunAt && ` · Next run ${new Date(s.nextRunAt).toLocaleString()}`}
                     {s.lastSentAt && ` · Last sent ${new Date(s.lastSentAt).toLocaleString()}`}
                   </p>
-                  {s.notes && <p className="text-sm text-amber-700 mt-1">{s.notes}</p>}
+                  {s.notes && (
+                    <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" strokeWidth={1.75} />
+                      <p className="text-xs text-amber-800">
+                        <span className="font-semibold">System Log:</span> {s.notes}
+                      </p>
+                    </div>
+                  )}
                   {names.length > 0 ? (
                     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-medium text-neutral-700 mr-0.5">
@@ -3256,7 +3292,9 @@ export function CampaignsView() {
                     </p>
                   )}
                 </div>
-                <Badge>{s.status}</Badge>
+                <span className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${categoryColor(s.status)}`}>
+                  {s.status}
+                </span>
               </div>
             </Card>
           );
@@ -3766,8 +3804,25 @@ type EmailTemplate = {
   created: string;
 };
 
+/** Picks an icon by keyword in the template name, falling back to a stable hash-based choice. */
+function templateIcon(name: string): { Icon: LucideIcon; bg: string; color: string } {
+  const n = name.toLowerCase();
+  if (n.includes("welcome")) return { Icon: Mail, bg: "bg-indigo-50", color: "text-indigo-600" };
+  if (n.includes("test")) return { Icon: FlaskConical, bg: "bg-blue-50", color: "text-blue-600" };
+  if (n.includes("off") || n.includes("discount") || n.includes("%")) return { Icon: Gift, bg: "bg-pink-50", color: "text-pink-600" };
+  const options = [
+    { Icon: Mail, bg: "bg-indigo-50", color: "text-indigo-600" },
+    { Icon: Percent, bg: "bg-emerald-50", color: "text-emerald-600" },
+    { Icon: ListChecks, bg: "bg-amber-50", color: "text-amber-600" },
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return options[hash % options.length];
+}
+
 export function EmailTemplatesView() {
   const [templates, setTemplates] = useState<EmailTemplate[] | null>(null);
+  const [sequences, setSequences] = useState<CampaignSequence[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -3794,7 +3849,19 @@ export function EmailTemplatesView() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount, the standard pattern for client-rendered pages with no server-fetched data
     load();
+    fetch("/api/campaign-sequences")
+      .then((r) => r.json())
+      .then((data) => setSequences(data.sequences ?? []))
+      .catch(() => setSequences([]));
   }, [load]);
+
+  /** Active sequences (not Draft) that reference this template in one of their email steps. */
+  function activeUsageCount(templateName: string): number {
+    return (sequences ?? []).filter((s) => {
+      if (!s.status || s.status === "Draft") return false;
+      return safeParseSteps(s.nodes).some((step) => step.type === "email" && step.templateName === templateName);
+    }).length;
+  }
 
   async function handleDelete(row: number) {
     setDeletingRow(row);
@@ -3808,22 +3875,32 @@ export function EmailTemplatesView() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader
-        title="Email Templates"
-        subtitle="Reusable email drafts you write once and pick from when creating a Campaign."
-        tool="Google Sheets (Email Templates)"
-      />
-
-      <div className="mb-6">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Marketing
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Email Templates</span>
+      </div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Email Templates</h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+            Create and manage reusable email drafts for your automated campaigns.
+          </p>
+          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Templates (Source)
+          </span>
+        </div>
         <button
           onClick={() => {
             setEditingRow(null);
             setShowForm((s) => !s);
           }}
-          className="inline-flex items-center gap-2 rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
+          className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-indigo-700 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-800"
         >
           <Plus className="h-4 w-4" strokeWidth={2} />
-          {showForm && editingRow === null ? "Cancel" : "New template"}
+          {showForm && editingRow === null ? "Cancel" : "New Template"}
         </button>
       </div>
 
@@ -3869,39 +3946,55 @@ export function EmailTemplatesView() {
               onCancel={() => setEditingRow(null)}
             />
           ) : (
-            <Card key={t.row} className="hover:border-blue-200 transition-colors">
+            <Card key={t.row} className="hover:border-indigo-200 transition-colors">
               <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-base font-semibold text-neutral-900">{t.name}</p>
-                  {t.created && <p className="text-xs text-neutral-400 mt-0.5">Created {t.created}</p>}
+                <div className="flex items-start gap-3 min-w-0">
+                  {(() => {
+                    const { Icon, bg, color } = templateIcon(t.name);
+                    return (
+                      <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${bg}`}>
+                        <Icon className={`h-4 w-4 ${color}`} strokeWidth={1.75} />
+                      </div>
+                    );
+                  })()}
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-neutral-900">{t.name}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {t.created && `Created ${t.created}`}
+                      {t.created && " · "}
+                      {activeUsageCount(t.name) > 0
+                        ? `Used in ${activeUsageCount(t.name)} active sequence${activeUsageCount(t.name) === 1 ? "" : "s"}`
+                        : "Never used"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-3">
                   <button
                     onClick={() => {
                       setShowForm(false);
                       setEditingRow(t.row);
                     }}
-                    className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                    className="text-sm font-semibold text-blue-700 hover:text-blue-800"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(t.row)}
                     disabled={deletingRow === t.row}
-                    className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                    className="text-sm font-semibold text-red-600 hover:text-red-700 disabled:opacity-50"
                   >
                     {deletingRow === t.row ? "Deleting…" : "Delete"}
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 rounded-xl border border-neutral-100 bg-neutral-50/60 p-4">
+              <div className="mt-4 rounded-xl bg-neutral-50 p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Subject</p>
-                <p className="text-sm text-neutral-900 mt-1">{t.subject}</p>
-                <div className="mt-3 pt-3 border-t border-neutral-200">
-                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Body</p>
-                  <p className="text-sm text-neutral-700 mt-1 whitespace-pre-line">{t.body}</p>
-                </div>
+                <p className="text-sm font-medium text-neutral-900 mt-1">{t.subject}</p>
+              </div>
+              <div className="mt-3 rounded-xl bg-neutral-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Body Preview</p>
+                <p className="text-sm text-neutral-700 mt-1 whitespace-pre-line">{t.body}</p>
               </div>
             </Card>
           )

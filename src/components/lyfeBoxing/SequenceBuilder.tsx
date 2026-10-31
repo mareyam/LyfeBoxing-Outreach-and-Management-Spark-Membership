@@ -450,13 +450,16 @@ export default function SequenceBuilder({
             type="button"
             onClick={handleStartNow}
             disabled={saving || starting}
-            className="rounded-full bg-neutral-900 text-white px-4 py-1.5 text-xs font-medium hover:bg-neutral-800 disabled:opacity-50"
+            className="rounded-full bg-indigo-700 text-white px-4 py-1.5 text-xs font-medium hover:bg-indigo-800 disabled:opacity-50"
           >
             {starting ? "Starting…" : "Start now"}
           </button>
         </div>
       </div>
-      <p className="px-4 pt-3 text-xs text-neutral-400">Drag nodes left/right to reorder the sequence. Order follows left-to-right position.</p>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100 bg-neutral-50/60">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Sequence Flow</p>
+        <p className="text-xs italic text-neutral-400">Drag nodes to reorder the sequence position.</p>
+      </div>
       <div style={{ height: 320 }}>
         <ReactFlow
           nodes={renderNodes}
