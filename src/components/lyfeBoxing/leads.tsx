@@ -70,21 +70,34 @@ function toDigest(row: SheetRow): Digest {
   };
 }
 
-function latestDigest(rows: SheetRow[]): Digest | null {
+type MonthlyDigest = { monthLabel: string; newLeads: number };
+
+/** Sums New Leads across every digest row in the most recent calendar month that has data. */
+function latestMonthlyDigest(rows: SheetRow[]): MonthlyDigest | null {
   if (rows.length === 0) return null;
-  const parsed = rows.map(toDigest);
-  const dated = parsed
+  const dated = rows
+    .map(toDigest)
     .map((item) => ({ item, date: parseSheetDate(item.date) }))
-    .filter((item): item is { item: Digest; date: Date } => item.date !== null)
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
-  return dated[0]?.item ?? parsed[parsed.length - 1];
+    .filter((entry): entry is { item: Digest; date: Date } => entry.date !== null);
+  if (dated.length === 0) return null;
+
+  const latest = dated.reduce((a, b) => (b.date.getTime() > a.date.getTime() ? b : a));
+  const month = latest.date.getMonth();
+  const year = latest.date.getFullYear();
+
+  const newLeads = dated
+    .filter((entry) => entry.date.getMonth() === month && entry.date.getFullYear() === year)
+    .reduce((sum, entry) => sum + (parseInt(entry.item.newLeads, 10) || 0), 0);
+
+  const monthLabel = latest.date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return { monthLabel, newLeads };
 }
 
 const STAGES = ["New", "Contacted", "Replied", "Trial Booked", "No-show", "Joined", "Lost"];
 
 export function LeadsView() {
   const [leads, setLeads] = useState<Lead[] | null>(null);
-  const [digest, setDigest] = useState<Digest | null>(null);
+  const [digest, setDigest] = useState<MonthlyDigest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [tabMissing, setTabMissing] = useState(false);
@@ -92,7 +105,7 @@ export function LeadsView() {
   const [stage, setStage] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<"followup-asc" | "followup-desc" | "name-asc" | "stage-asc">("followup-asc");
+  const [sortBy, setSortBy] = useState<"name-asc" | "stage-asc" | "status-asc">("name-asc");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [generating, setGenerating] = useState<number | "bulk" | null>(null);
@@ -118,7 +131,7 @@ export function LeadsView() {
       setTabMissing(false);
       if (digestRes.ok) {
         const digestData = await digestRes.json();
-        setDigest(latestDigest(digestData.rows ?? []));
+        setDigest(latestMonthlyDigest(digestData.rows ?? []));
       } else {
         setDigest(null);
       }
@@ -158,16 +171,8 @@ export function LeadsView() {
           return a.fullName.localeCompare(b.fullName);
         case "stage-asc":
           return a.stage.localeCompare(b.stage);
-        case "followup-asc":
-        case "followup-desc": {
-          const aDate = parseSheetDate(a.nextFollowUp);
-          const bDate = parseSheetDate(b.nextFollowUp);
-          if (!aDate && !bDate) return a.fullName.localeCompare(b.fullName);
-          if (!aDate) return 1;
-          if (!bDate) return -1;
-          const diff = aDate.getTime() - bDate.getTime();
-          return sortBy === "followup-asc" ? diff : -diff;
-        }
+        case "status-asc":
+          return (a.emailStatus || "Not Assigned").localeCompare(b.emailStatus || "Not Assigned");
         default:
           return 0;
       }
@@ -187,6 +192,10 @@ export function LeadsView() {
 
   const openLead = leads?.find((lead) => lead.row === openRow);
   const openDraft = openLead ? decodeEmailDraft(openLead.emailDraft) : { subject: "", body: "" };
+
+  const draftableLeads = (leads ?? []).filter(
+    (lead) => !!lead.email.trim() && !["Queued", "Sent", "Sending"].includes(lead.emailStatus)
+  );
 
   function canSend(lead: Lead): boolean {
     return !!lead.email.trim() && !!decodeEmailDraft(lead.emailDraft).body && lead.emailStatus !== "Sent" && lead.emailStatus !== "Sending";
@@ -264,16 +273,10 @@ export function LeadsView() {
 
       {digest && (
         <Card className="mb-6">
-          <p className="text-sm text-neutral-400">Latest digest{digest.date ? ` · ${digest.date}` : ""}</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
-            <DigestStat label="New leads" value={digest.newLeads || "—"} />
-            <DigestStat label="Replies" value={digest.replies || "—"} />
-            <DigestStat label="Trials booked" value={digest.trialsBooked || "—"} />
-            <DigestStat label="No-shows" value={digest.noShows || "—"} />
-            <DigestStat label="Joined" value={digest.joined || "—"} />
-            <DigestStat label="Follow-ups due" value={digest.followUpsDue || "—"} />
-          </div>
-          {digest.summary && <p className="text-sm text-neutral-600 mt-4 whitespace-pre-line">{digest.summary}</p>}
+          <p className="text-sm text-neutral-400">{digest.monthLabel}</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">
+            {digest.newLeads} new lead{digest.newLeads === 1 ? "" : "s"}
+          </p>
         </Card>
       )}
 
@@ -296,6 +299,7 @@ export function LeadsView() {
       {actionError && <p className="text-sm text-red-600 mb-4">{actionError}</p>}
 
       {leads && (
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <p className="text-base font-semibold text-neutral-900">Lead List</p>
@@ -358,10 +362,9 @@ export function LeadsView() {
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                 className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
               >
-                <option value="followup-asc">Next Follow-up (Soonest)</option>
-                <option value="followup-desc">Next Follow-up (Latest)</option>
                 <option value="name-asc">Name (A–Z)</option>
                 <option value="stage-asc">Stage (A–Z)</option>
+                <option value="status-asc">Email Status (A–Z)</option>
               </select>
               <div className="relative w-56 shrink-0">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
@@ -431,12 +434,10 @@ export function LeadsView() {
             <thead>
               <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
                 <th className="py-3 pr-2 w-6"></th>
-                <th className="py-3 pr-4 w-[24%]">Lead</th>
-                <th className="py-3 pr-4 w-[14%]">Stage</th>
-                <th className="py-3 pr-4 w-[14%]">Next Follow-up</th>
-                <th className="py-3 pr-4 w-[12%]">Step</th>
-                <th className="py-3 pr-4 w-[16%]">Email Status</th>
-                <th className="py-3 pr-4 w-[20%]">Actions</th>
+                <th className="py-3 pr-4 w-[32%]">Lead</th>
+                <th className="py-3 pr-4 w-[20%]">Stage</th>
+                <th className="py-3 pr-4 w-[20%]">Email Status</th>
+                <th className="py-3 pr-4 w-[28%]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -483,8 +484,6 @@ export function LeadsView() {
                         "—"
                       )}
                     </td>
-                    <td className="py-3 pr-4 text-neutral-700 truncate">{lead.nextFollowUp || "—"}</td>
-                    <td className="py-3 pr-4 text-neutral-500 truncate">{lead.sequenceStep || "—"}</td>
                     <td className="py-3 pr-4">
                       {lead.emailStatus ? (
                         <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(lead.emailStatus)}`}>
@@ -549,6 +548,26 @@ export function LeadsView() {
             </div>
           </div>
         </Card>
+
+        <div className="rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            AI CAMPAIGN
+          </span>
+          <p className="text-lg font-semibold mt-3">Lead Outreach</p>
+          <p className="text-sm text-blue-100 mt-1">
+            {draftableLeads.length} lead{draftableLeads.length === 1 ? "" : "s"} need{draftableLeads.length === 1 ? "s" : ""} a follow-up
+            draft. Generate personalized outreach to send them automatically.
+          </p>
+          <button
+            onClick={() => generate(draftableLeads.map((lead) => lead.row))}
+            disabled={draftableLeads.length === 0 || generating === "bulk"}
+            className="w-full mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" strokeWidth={2} />
+            {generating === "bulk" ? "Drafting…" : `Generate all (${draftableLeads.length})`}
+          </button>
+        </div>
+        </div>
       )}
 
       {openLead && (
@@ -585,15 +604,6 @@ export function LeadsView() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function DigestStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-neutral-400">{label}</p>
-      <p className="text-lg font-semibold text-neutral-900 mt-0.5">{value}</p>
     </div>
   );
 }
