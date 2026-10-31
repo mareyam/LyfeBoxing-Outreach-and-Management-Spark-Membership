@@ -21,6 +21,9 @@ export type NotifyGrokInput = {
   /** Campaigns only: so Grok knows whether/what to send over SMS without re-reading the row first. */
   channel?: string;
   smsBody?: string;
+  /** Campaign Sequences: the single row and action Grok expects, alongside the usual rows/kind fields. */
+  row?: number;
+  action?: string;
 };
 
 function readEnv(name: string): string | undefined {
@@ -41,7 +44,7 @@ function isRetryableStatus(status: number): boolean {
  * (it is not fired off and abandoned when the function returns), retried
  * once on a network error or a 5xx, and logs only the HTTP status.
  */
-export async function notifyGrok({ tab, rows, kind, channel, smsBody }: NotifyGrokInput): Promise<void> {
+export async function notifyGrok({ tab, rows, kind, channel, smsBody, row, action }: NotifyGrokInput): Promise<void> {
   const url = readEnv("GROK_WEBHOOK_URL");
   const auth = readEnv("GROK_WEBHOOK_AUTH");
   if (!url || !auth) {
@@ -57,6 +60,8 @@ export async function notifyGrok({ tab, rows, kind, channel, smsBody }: NotifyGr
     queuedAt: new Date().toISOString(),
     ...(channel !== undefined ? { channel } : {}),
     ...(smsBody !== undefined ? { smsBody } : {}),
+    ...(row !== undefined ? { row } : {}),
+    ...(action !== undefined ? { action } : {}),
   });
 
   async function post(): Promise<Response> {

@@ -385,15 +385,19 @@ export async function ensureHeaders(tabName: string, headers: string[]): Promise
   });
 }
 
-export async function appendTabRow(tabName: string, headers: string[], values: Record<string, string>): Promise<void> {
+/** Returns the 1-based row number the new row landed on, parsed from the API's updatedRange (e.g. "'Tab'!A5:F5" -> 5). */
+export async function appendTabRow(tabName: string, headers: string[], values: Record<string, string>): Promise<number> {
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.append({
+  const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${quotedTab(tabName)}!A1`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [headers.map((header) => values[header] ?? "")] },
   });
+  const updatedRange = res.data.updates?.updatedRange ?? "";
+  const match = updatedRange.match(/![A-Z]+(\d+)/);
+  return match ? Number(match[1]) : NaN;
 }
 
 export async function appendAppointmentRequest(input: {
@@ -431,6 +435,148 @@ export async function appendEmailTemplate(input: { name: string; subject: string
     Body: input.body,
     Created: new Date().toLocaleDateString("en-US"),
   });
+}
+
+const SEQUENCES_TAB = "Campaign Sequences";
+const SEQUENCES_HEADERS = [
+  "Sequence Name",
+  "Audience",
+  "Steps",
+  "Status",
+  "Start Date",
+  "Current Step",
+  "Next Run At",
+  "Last Sent At",
+  "Notes",
+];
+/** Old header -> new header, for sheets created before this column rename. Data cells are untouched — only the row-1 labels change. */
+const SEQUENCES_HEADER_RENAMES: Record<string, string> = { Name: "Sequence Name", Nodes: "Steps" };
+
+export type CampaignSequenceRow = {
+  row: number;
+  name: string;
+  audience: string;
+  startDate: string;
+  nodes: string;
+  status: string;
+  currentStep: string;
+  nextRunAt: string;
+  lastSentAt: string;
+  notes: string;
+};
+
+/** One-time, in-place rename of old column labels to the current schema — never moves or deletes data. */
+async function migrateSequenceHeaders(): Promise<void> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(SEQUENCES_TAB)}!A1:ZZ1`,
+  });
+  const existing = (res.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+  if (existing.length === 0) return;
+  let changed = false;
+  const renamed = existing.map((h) => {
+    const next = SEQUENCES_HEADER_RENAMES[h];
+    if (next && !existing.includes(next)) {
+      changed = true;
+      return next;
+    }
+    return h;
+  });
+  if (changed) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(SEQUENCES_TAB)}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [renamed] },
+    });
+  }
+}
+
+export async function listCampaignSequences(): Promise<CampaignSequenceRow[]> {
+  try {
+    await migrateSequenceHeaders();
+    await ensureHeaders(SEQUENCES_TAB, SEQUENCES_HEADERS);
+    const rows = await readTabRows(SEQUENCES_TAB);
+    return rows
+      .map((r) => ({
+        row: r._row,
+        name: r["Sequence Name"] ?? "",
+        audience: r["Audience"] ?? "",
+        startDate: r["Start Date"] ?? "",
+        nodes: r["Steps"] ?? "",
+        status: r["Status"] ?? "Draft",
+        currentStep: r["Current Step"] ?? "",
+        nextRunAt: r["Next Run At"] ?? "",
+        lastSentAt: r["Last Sent At"] ?? "",
+        notes: r["Notes"] ?? "",
+      }))
+      .filter((s) => s.name.trim() !== "");
+  } catch (err) {
+    if (err instanceof SheetTabMissingError) return [];
+    throw err;
+  }
+}
+
+export async function appendCampaignSequence(input: {
+  name: string;
+  audience: string;
+  startDate: string;
+  nodes: string;
+  status?: string;
+  currentStep?: string;
+  nextRunAt?: string;
+}): Promise<number> {
+  await migrateSequenceHeaders();
+  await ensureTab(SEQUENCES_TAB, SEQUENCES_HEADERS);
+  return appendTabRow(SEQUENCES_TAB, SEQUENCES_HEADERS, {
+    "Sequence Name": input.name,
+    Audience: input.audience,
+    "Start Date": input.startDate,
+    Steps: input.nodes,
+    Status: input.status ?? "Draft",
+    "Current Step": input.currentStep ?? "",
+    "Next Run At": input.nextRunAt ?? "",
+  });
+}
+
+export async function updateCampaignSequence(
+  row: number,
+  input: {
+    name?: string;
+    audience?: string;
+    startDate?: string;
+    nodes?: string;
+    status?: string;
+    currentStep?: string;
+    nextRunAt?: string;
+    lastSentAt?: string;
+    notes?: string;
+  }
+): Promise<void> {
+  await migrateSequenceHeaders();
+  await ensureHeaders(SEQUENCES_TAB, SEQUENCES_HEADERS);
+  const values: Record<string, string> = {};
+  if (input.name !== undefined) values["Sequence Name"] = input.name;
+  if (input.audience !== undefined) values["Audience"] = input.audience;
+  if (input.startDate !== undefined) values["Start Date"] = input.startDate;
+  if (input.nodes !== undefined) values["Steps"] = input.nodes;
+  if (input.status !== undefined) values["Status"] = input.status;
+  if (input.currentStep !== undefined) values["Current Step"] = input.currentStep;
+  if (input.nextRunAt !== undefined) values["Next Run At"] = input.nextRunAt;
+  if (input.lastSentAt !== undefined) values["Last Sent At"] = input.lastSentAt;
+  if (input.notes !== undefined) values["Notes"] = input.notes;
+  await updateTabRowCells(SEQUENCES_TAB, row, values);
+}
+
+/** Reads just the Status cell — used to refuse re-queueing a row that's already in flight or done. */
+export async function getCampaignSequenceStatus(row: number): Promise<string> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(SEQUENCES_TAB)}!D${row}`,
+  });
+  return (res.data.values?.[0]?.[0] ?? "").toString();
 }
 
 export async function deleteSheetRow(tabName: string, rowNumber: number): Promise<void> {

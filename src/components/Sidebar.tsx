@@ -3,58 +3,77 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Dumbbell, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  BarChart2,
+  Users,
+  UserPlus,
+  CreditCard,
+  UserMinus,
+  Clock,
+  AlertTriangle,
+  TrendingUp,
+  UserX,
+  Megaphone,
+  FileText,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
+import CompanySwitcher from "./CompanySwitcher";
+import IconRail from "./IconRail";
 
-type SidebarLinkDef = { label: string; href?: string };
+type SidebarLinkDef = { label: string; href?: string; icon: LucideIcon };
 
 const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
   {
-    heading: "01. Overview",
-    links: [{ href: "/lyfe-boxing/weekly-summary", label: "Summary" }],
+    heading: "Overview",
+    links: [{ href: "/lyfe-boxing/weekly-summary", label: "Summary", icon: BarChart2 }],
   },
   {
-    heading: "02. CRM & Members",
+    heading: "CRM & Members",
     links: [
-      { href: "/lyfe-boxing", label: "All Contacts" },
-      { href: "/lyfe-boxing/leads", label: "Leads" },
-      { href: "/lyfe-boxing/memberships", label: "Memberships" },
+      { href: "/lyfe-boxing", label: "All Contacts", icon: Users },
+      { href: "/lyfe-boxing/leads", label: "Leads", icon: UserPlus },
+      { href: "/lyfe-boxing/memberships", label: "Memberships", icon: CreditCard },
     ],
   },
   {
-    heading: "03. Retention & Growth",
+    heading: "Retention & Growth",
     links: [
-      { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back" },
-      { href: "/lyfe-boxing/past-due", label: "Past Due" },
-      { href: "/lyfe-boxing/at-risk", label: "At Risk" },
-      { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion" },
-      { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates" },
-      { label: "Inactive Members" },
+      { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back", icon: UserMinus },
+      { href: "/lyfe-boxing/past-due", label: "Past Due", icon: Clock },
+      { href: "/lyfe-boxing/at-risk", label: "At Risk", icon: AlertTriangle },
+      { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion", icon: TrendingUp },
+      { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates", icon: TrendingUp },
+      { label: "Inactive Members", icon: UserX },
     ],
   },
   {
-    heading: "04. Marketing",
+    heading: "Marketing",
     links: [
-      { href: "/lyfe-boxing/campaigns", label: "Campaigns" },
-      { href: "/lyfe-boxing/email-templates", label: "Email Templates" },
-      { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
-      { label: "Workflows" },
+      { href: "/lyfe-boxing/campaigns", label: "Campaigns", icon: Megaphone },
+      { href: "/lyfe-boxing/email-templates", label: "Email Templates", icon: FileText },
+      // temporarily hidden — { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
+      { label: "Workflows", icon: Workflow },
     ],
   },
-  {
-    heading: "05. Operations",
-    links: [
-      { href: "/lyfe-boxing/calendar", label: "Calendar" },
-      { href: "/lyfe-boxing/playbook", label: "Playbook" },
-    ],
-  },
+  // temporarily hidden
+  // {
+  //   heading: "05. Operations",
+  //   links: [
+  //     { href: "/lyfe-boxing/calendar", label: "Calendar" },
+  //     { href: "/lyfe-boxing/playbook", label: "Playbook" },
+  //   ],
+  // },
 ];
 
 const COLLAPSE_KEY = "sidebar-collapsed";
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const isLyfeBoxing = pathname.startsWith("/lyfe-boxing");
-  const [lyfeBoxingOpen, setLyfeBoxingOpen] = useState(isLyfeBoxing);
   const [collapsed, setCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(lyfeBoxingGroups.map((g) => [g.heading, g.links.some((l) => l.href === pathname)]))
@@ -87,148 +106,122 @@ export default function Sidebar() {
 
   if (collapsed) {
     return (
-      <aside className="w-16 shrink-0 border-r border-neutral-200 bg-neutral-50/60 h-full overflow-y-auto flex flex-col items-center py-4 gap-2">
+      <div className="relative h-full shrink-0">
+        <IconRail />
         <button
           onClick={toggleCollapsed}
           title="Expand sidebar"
-          className="h-9 w-9 flex items-center justify-center rounded-lg text-neutral-500 hover:bg-white hover:text-neutral-900"
+          className="absolute -right-2.5 top-4 h-5 w-5 flex items-center justify-center rounded-full border border-blue-100 bg-white text-blue-400 shadow-sm hover:text-blue-600"
         >
-          <ChevronsRight className="h-[18px] w-[18px]" strokeWidth={1.75} />
+          <ChevronsRight className="h-3 w-3" strokeWidth={2} />
         </button>
-        <div className="w-full border-t border-neutral-200 my-1" />
-        <Link
-          href="/"
-          title="Home"
-          className={`h-9 w-9 flex items-center justify-center rounded-lg ${
-            pathname === "/" ? "bg-white text-neutral-900 shadow-sm border border-neutral-200" : "text-neutral-500 hover:bg-white"
-          }`}
-        >
-          <Home className="h-[18px] w-[18px]" strokeWidth={1.75} />
-        </Link>
-        <Link
-          href="/lyfe-boxing"
-          title="Lyfe Boxing"
-          className={`h-9 w-9 flex items-center justify-center rounded-lg ${
-            isLyfeBoxing ? "bg-white text-neutral-900 shadow-sm border border-neutral-200" : "text-neutral-500 hover:bg-white"
-          }`}
-        >
-          <Dumbbell className="h-[18px] w-[18px]" strokeWidth={1.75} />
-        </Link>
-      </aside>
+      </div>
     );
   }
 
   return (
-    <aside className="w-72 shrink-0 border-r border-neutral-200 bg-neutral-50/60 h-full overflow-y-auto">
-      <div className="px-6 py-7 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-semibold text-neutral-900">Alex&apos;s Assistants</p>
-          <p className="text-sm text-neutral-400 mt-0.5">Sample preview · not live yet</p>
-        </div>
+    <aside className="w-72 shrink-0 border-r border-blue-100 bg-white h-full overflow-y-auto flex flex-col">
+      <div className="flex items-start justify-between px-4 pt-4">
+        <CompanySwitcher />
         <button
           onClick={toggleCollapsed}
           title="Collapse sidebar"
-          className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-white hover:text-neutral-700"
+          className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-blue-50 hover:text-blue-600 mt-0.5"
         >
           <ChevronsLeft className="h-4 w-4" strokeWidth={1.75} />
         </button>
       </div>
-      <nav className="px-3 pb-6 space-y-0.5">
-        <SidebarLink href="/" label="Home" Icon={Home} active={pathname === "/"} />
 
-        <button
-          onClick={() => setLyfeBoxingOpen((o) => !o)}
-          className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-            isLyfeBoxing
-              ? "bg-white text-neutral-900 shadow-sm border border-neutral-200"
-              : "text-neutral-600 hover:bg-white/70 hover:text-neutral-900"
-          }`}
-        >
-          <Dumbbell className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-          <span className="flex-1 text-left">Lyfe Boxing</span>
-          {lyfeBoxingOpen ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
-          )}
-        </button>
-        {lyfeBoxingOpen && (
-          <div className="ml-[22px] pl-[13px] border-l border-neutral-200 py-1 space-y-0.5">
-            {lyfeBoxingGroups.map((group) => {
-              const groupOpen = !!openGroups[group.heading];
-              return (
-                <div key={group.heading}>
-                  <button
-                    onClick={() => toggleGroup(group.heading)}
-                    className="w-full flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-400 uppercase tracking-wide hover:bg-white/70 hover:text-neutral-600 transition-colors"
-                  >
-                    {groupOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-                    )}
-                    <span className="flex-1 text-left">{group.heading}</span>
-                  </button>
-                  {groupOpen && (
-                    <div className="space-y-0.5 pb-2">
-                      {group.links.map((l) =>
-                        l.href ? (
-                          <Link
-                            key={l.href}
-                            href={l.href}
-                            className={`block rounded-lg px-3 py-2 ml-[18px] text-sm transition-colors ${
-                              pathname === l.href
-                                ? "bg-white text-neutral-900 font-medium shadow-sm border border-neutral-200"
-                                : "text-neutral-500 hover:bg-white/70 hover:text-neutral-900"
-                            }`}
-                          >
-                            {l.label}
-                          </Link>
-                        ) : (
-                          <span
-                            key={l.label}
-                            title="Coming soon"
-                            className="block rounded-lg px-3 py-2 ml-[18px] text-sm text-neutral-300 cursor-not-allowed select-none"
-                          >
-                            {l.label}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <div className="px-4 pt-3 pb-3">
+        <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 focus-within:border-blue-400">
+          <Search className="h-4 w-4 shrink-0 text-neutral-400" strokeWidth={1.75} />
+          <span className="flex-1 text-sm text-neutral-400">Search</span>
+          <kbd className="text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
+            ⌘K
+          </kbd>
+        </div>
+      </div>
 
+      <nav className="flex-1 px-3 pb-3 space-y-3 overflow-y-auto">
+        {lyfeBoxingGroups.map((group) => (
+          <SidebarSection
+            key={group.heading}
+            title={group.heading}
+            open={!!openGroups[group.heading]}
+            onToggle={() => toggleGroup(group.heading)}
+            links={group.links}
+            pathname={pathname}
+          />
+        ))}
       </nav>
+
+      <div className="border-t border-blue-100 px-3 py-3">
+        <button className="w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-blue-50">
+          <div className="h-7 w-7 shrink-0 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center justify-center">
+            LB
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-medium text-neutral-900 truncate">Lyfe Boxing</p>
+            <p className="text-xs text-neutral-400 truncate">Google Sheets connected</p>
+          </div>
+        </button>
+      </div>
     </aside>
   );
 }
 
-function SidebarLink({
-  href,
-  label,
-  Icon,
-  active,
+function SidebarSection({
+  title,
+  open,
+  onToggle,
+  links,
+  pathname,
 }: {
-  href: string;
-  label: string;
-  Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  active: boolean;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  links: SidebarLinkDef[];
+  pathname: string;
 }) {
   return (
-    <Link
-      href={href}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-        active
-          ? "bg-white text-neutral-900 shadow-sm border border-neutral-200"
-          : "text-neutral-600 hover:bg-white/70 hover:text-neutral-900"
-      }`}
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-      <span>{label}</span>
-    </Link>
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-neutral-400 uppercase tracking-wide hover:text-blue-600 transition-colors"
+      >
+        <span className="flex-1 text-left">{title}</span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} strokeWidth={2} />
+      </button>
+      {open && (
+        <div className="space-y-0.5">
+          {links.map((l) => {
+            const Icon = l.icon;
+            return l.href ? (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+                  pathname === l.href
+                    ? "bg-blue-50 text-blue-700 font-medium"
+                    : "text-neutral-600 hover:bg-blue-50/60 hover:text-blue-700"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                <span className="truncate">{l.label}</span>
+              </Link>
+            ) : (
+              <span
+                key={l.label}
+                title="Coming soon"
+                className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-neutral-300 cursor-not-allowed select-none"
+              >
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                <span className="truncate">{l.label}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

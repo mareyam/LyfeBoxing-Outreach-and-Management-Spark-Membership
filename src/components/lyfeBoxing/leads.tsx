@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Send, Sparkles } from "lucide-react";
-import { Badge, Card, PageHeader } from "@/components/ui";
+import { Avatar, Badge, Card, PageHeader } from "@/components/ui";
 import { DraftModal, PaginationControls, apiError, usePagination, usePollWhileQueued } from "@/components/lyfeBoxing/views";
 import { decodeEmailDraft, parseSheetDate } from "@/lib/leadSequence";
 
@@ -384,7 +384,12 @@ export function LeadsView() {
                           />
                         )}
                       </td>
-                      <td className="py-2.5 pr-4 font-medium text-neutral-900 whitespace-nowrap">{lead.fullName || "—"}</td>
+                      <td className="py-2.5 pr-4 font-medium text-neutral-900 whitespace-nowrap">
+                        <span className="flex items-center gap-2.5">
+                          <Avatar name={lead.fullName} size="sm" />
+                          {lead.fullName || "—"}
+                        </span>
+                      </td>
                       <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{lead.email || "—"}</td>
                       <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{lead.phone || "—"}</td>
                       <td className="py-2.5 pr-4 whitespace-nowrap">{lead.stage ? <Badge>{lead.stage}</Badge> : "—"}</td>

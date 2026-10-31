@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Mail, MessageSquare, Plus, Send, Sparkles, X } from "lucide-react";
-import { Badge, Card, PageHeader, Stat } from "@/components/ui";
+import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
+import SequenceBuilder, { type SequenceStep } from "@/components/lyfeBoxing/SequenceBuilder";
 
 const PAGE_SIZE = 20;
 
@@ -495,6 +496,20 @@ function useContactEmails() {
   return useCallback((name: string, rowEmail?: string) => rowEmail?.trim() || byName.get(name.trim().toLowerCase()) || "", [byName]);
 }
 
+/** Names currently on the Leads tab — used to resolve a "New leads" sequence audience into an actual recipient list. */
+function useLeadNames() {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    fetch(`/api/lyfe-data?tab=${encodeURIComponent("Leads")}`)
+      .then((r) => r.json())
+      .then((d: { rows?: SheetRow[] }) => {
+        setNames((d.rows ?? []).map((r) => findField(r, "name").trim()).filter(Boolean));
+      })
+      .catch(() => setNames([]));
+  }, []);
+  return names;
+}
+
 function SetupNeeded() {
   return (
     <Card className="border-amber-200 bg-amber-50">
@@ -678,7 +693,12 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
                   <tbody>
                     {members.map((m, i) => (
                       <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                        <td className="py-2.5 pl-5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name || "—"}</td>
+                        <td className="py-2.5 pl-5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                          <span className="flex items-center gap-2.5">
+                            <Avatar name={m.name} size="sm" />
+                            {m.name || "—"}
+                          </span>
+                        </td>
                         <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.expires || "—"}</td>
                         <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.overdue || "—"}</td>
                         <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.nextPayment || "—"}</td>
@@ -757,7 +777,12 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
             <tbody>
               {pageItems.map((c, i) => (
                 <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={c.name} size="sm" />
+                      {c.name || "—"}
+                    </span>
+                  </td>
                   <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.email || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.phone || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.contactType || "—"}</td>
@@ -962,7 +987,12 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                       />
                     )}
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{c.name || "—"}</td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={c.name} size="sm" />
+                      {c.name || "—"}
+                    </span>
+                  </td>
                   <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{emailFor(c.name, c.email) || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-600 whitespace-nowrap">{c.membership || "—"}</td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{c.signedDate || "—"}</td>
@@ -1827,6 +1857,34 @@ function buildAudience(status: string, membership: string): string {
   return parts.join(" · ");
 }
 
+type CampaignSequence = {
+  row: number;
+  name: string;
+  audience: string;
+  startDate: string;
+  nodes: string;
+  status: string;
+  currentStep: string;
+  nextRunAt: string;
+  lastSentAt: string;
+  notes: string;
+};
+
+/** A row in one of these statuses is already in flight or finished — the Start button hides and Stop shows instead. */
+const SEQUENCE_IN_FLIGHT = new Set(["Queued", "Running", "Sending"]);
+const SEQUENCE_BLOCKED_FOR_START = new Set(["Queued", "Running", "Sending", "Completed"]);
+
+const ONE_OFF_CAMPAIGNS_ENABLED = false;
+
+function safeParseSteps(nodes: string): SequenceStep[] {
+  try {
+    const parsed = JSON.parse(nodes);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function personalCampaignName(notes: string): string {
   if (notes.startsWith("winback:")) return notes.slice("winback:".length);
   if (notes.startsWith("trial:") && !notes.startsWith("trial-sms:")) return notes.slice("trial:".length);
@@ -1844,6 +1902,164 @@ export function CampaignsView() {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [deletingRow, setDeletingRow] = useState<number | null>(null);
   const emailFor = useContactEmails();
+  const leadNames = useLeadNames();
+
+  const [sequences, setSequences] = useState<CampaignSequence[] | null>(null);
+  const [sequencesError, setSequencesError] = useState<string | null>(null);
+  const [builderRow, setBuilderRow] = useState<number | "new" | null>(null);
+  const [savingSequence, setSavingSequence] = useState(false);
+  const [deletingSeqRow, setDeletingSeqRow] = useState<number | null>(null);
+  const [startingSeqRow, setStartingSeqRow] = useState<number | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const loadSequences = useCallback(async () => {
+    try {
+      const res = await fetch("/api/campaign-sequences");
+      const data = await res.json();
+      if (!res.ok) {
+        setSequencesError(data.error ?? "Failed to load sequences.");
+        return;
+      }
+      setSequences(data.sequences);
+      setSequencesError(null);
+    } catch {
+      setSequencesError("Failed to load sequences.");
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch on mount
+    loadSequences();
+  }, [loadSequences]);
+
+  function sequenceName(steps: SequenceStep[]): string {
+    return steps.find((s) => s.type === "email" && s.templateName)
+      ? `Sequence: ${steps.filter((s) => s.type === "email").map((s) => (s as { templateName: string }).templateName).join(" → ")}`
+      : `Sequence ${new Date().toLocaleDateString("en-US")}`;
+  }
+
+  async function handleSaveSequence(steps: SequenceStep[], audience: string, startDate: string) {
+    setSavingSequence(true);
+    try {
+      const name = sequenceName(steps);
+      if (builderRow === "new") {
+        await fetch("/api/campaign-sequences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, audience, startDate, nodes: JSON.stringify(steps) }),
+        });
+      } else if (typeof builderRow === "number") {
+        await fetch("/api/campaign-sequences", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ row: builderRow, audience, startDate, nodes: JSON.stringify(steps) }),
+        });
+      }
+      setBuilderRow(null);
+      await loadSequences();
+    } finally {
+      setSavingSequence(false);
+    }
+  }
+
+  /** Save-and-start from inside the builder: writes the sequence, marks it Queued, and sets the start date to today. */
+  async function handleStartNowFromBuilder(steps: SequenceStep[], audience: string) {
+    setStartingSeqRow(typeof builderRow === "number" ? builderRow : -1);
+    setStartError(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res =
+        builderRow === "new"
+          ? await fetch("/api/campaign-sequences", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: sequenceName(steps), audience, startDate: today, nodes: JSON.stringify(steps), status: "Queued" }),
+            })
+          : await fetch("/api/campaign-sequences", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ row: builderRow, audience, startDate: today, nodes: JSON.stringify(steps), status: "Queued" }),
+            });
+      if (!res.ok) {
+        setStartError(await apiError(res, "Failed to start the sequence."));
+        return;
+      }
+      setBuilderRow(null);
+      await loadSequences();
+    } finally {
+      setStartingSeqRow(null);
+    }
+  }
+
+  async function handleDeleteSequence(row: number) {
+    setDeletingSeqRow(row);
+    try {
+      const res = await fetch(`/api/campaign-sequences?row=${row}`, { method: "DELETE" });
+      if (res.ok) await loadSequences();
+    } finally {
+      setDeletingSeqRow(null);
+    }
+  }
+
+  /** Starts a sequence right away: marks it Queued (server refuses if it's already in flight or done) so Grok picks it up. */
+  async function handleStartNow(row: number) {
+    setStartingSeqRow(row);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/campaign-sequences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row, status: "Queued", startDate: new Date().toISOString().slice(0, 10) }),
+      });
+      if (!res.ok) {
+        setStartError(await apiError(res, "Failed to start the sequence."));
+        return;
+      }
+      await loadSequences();
+    } finally {
+      setStartingSeqRow(null);
+    }
+  }
+
+  /** Stops an in-flight sequence — just flips Status to "Stopped", no webhook call needed. */
+  async function handleStopSequence(row: number) {
+    setStartingSeqRow(row);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/campaign-sequences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row, status: "Stopped" }),
+      });
+      if (!res.ok) {
+        setStartError(await apiError(res, "Failed to stop the sequence."));
+        return;
+      }
+      await loadSequences();
+    } finally {
+      setStartingSeqRow(null);
+    }
+  }
+
+  const editingSequence = typeof builderRow === "number" ? sequences?.find((s) => s.row === builderRow) : undefined;
+  const editingSteps: SequenceStep[] = editingSequence ? safeParseSteps(editingSequence.nodes) : [];
+
+  /** Resolves a sequence's saved audience string into an actual recipient list, where possible. */
+  function resolveRecipients(audience: string): { names: string[]; description: string } {
+    if (audience.includes("Contact: ")) {
+      const names = Array.from(audience.matchAll(/Contact:\s*([^<;]+?)\s*</g)).map((m) => m[1].trim());
+      return { names, description: "Individual contacts" };
+    }
+    if (audience.startsWith("Individual: ")) {
+      return { names: audience.slice("Individual: ".length).split(", ").filter(Boolean), description: "Individual contacts" };
+    }
+    if (audience === "New leads") {
+      return { names: leadNames, description: "New leads" };
+    }
+    return { names: [], description: audience || "Everyone" };
+  }
+
+  const ranSequences = (sequences ?? []).filter((s) => s.status && s.status !== "Draft");
 
   const load = useCallback(async () => {
     try {
@@ -1930,10 +2146,158 @@ export function CampaignsView() {
     <div className="max-w-6xl">
       <PageHeader
         title="Campaigns"
-        subtitle="Edit a draft, then send it. Send saves the message, marks the row Queued, and tells Grok to deliver it."
-        tool="Google Sheets (Campaigns)"
+        subtitle="Build a drag-and-drop email sequence — emails and wait steps, saved to Google Sheets for Grok to run."
+        tool="Google Sheets (Campaign Sequences)"
       />
 
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-neutral-700">Sequences</h2>
+        {builderRow === null && (
+          <button
+            onClick={() => setBuilderRow("new")}
+            className="rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
+          >
+            New sequence
+          </button>
+        )}
+      </div>
+
+      {sequencesError && (
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{sequencesError}</p>
+        </Card>
+      )}
+      {startError && (
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <p className="text-sm text-red-700">{startError}</p>
+        </Card>
+      )}
+
+      {builderRow !== null && (
+        <SequenceBuilder
+          key={builderRow}
+          initialSteps={editingSteps}
+          initialAudience={editingSequence?.audience ?? ""}
+          initialStartDate={editingSequence?.startDate ?? ""}
+          saving={savingSequence}
+          starting={startingSeqRow !== null}
+          onCancel={() => setBuilderRow(null)}
+          onSave={handleSaveSequence}
+          onStartNow={handleStartNowFromBuilder}
+        />
+      )}
+
+      {sequences && sequences.length === 0 && builderRow === null && (
+        <p className="text-sm text-neutral-400 mb-6">No sequences yet. Create one above.</p>
+      )}
+
+      <div className="space-y-3 mb-10">
+        {(sequences ?? []).map((s) => {
+          const steps = safeParseSteps(s.nodes);
+          const emailCount = steps.filter((st) => st.type === "email").length;
+          const waitCount = steps.filter((st) => st.type === "wait").length;
+          return (
+            <Card key={s.row} className="hover:border-blue-200 transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-base font-semibold text-neutral-900">{s.name}</p>
+                  <p className="text-sm text-neutral-500 mt-0.5">
+                    {emailCount} email{emailCount === 1 ? "" : "s"} · {waitCount} wait step{waitCount === 1 ? "" : "s"}
+                    {s.audience && ` · ${s.audience}`}
+                    {s.startDate && ` · Starts ${s.startDate}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge>{s.status || "Draft"}</Badge>
+                  {!SEQUENCE_BLOCKED_FOR_START.has(s.status) && (
+                    <button
+                      onClick={() => handleStartNow(s.row)}
+                      disabled={startingSeqRow === s.row}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      <Send className="h-3 w-3" strokeWidth={2} />
+                      {startingSeqRow === s.row ? "Starting…" : "Start now"}
+                    </button>
+                  )}
+                  {SEQUENCE_IN_FLIGHT.has(s.status) && (
+                    <button
+                      onClick={() => handleStopSequence(s.row)}
+                      disabled={startingSeqRow === s.row}
+                      className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                    >
+                      {startingSeqRow === s.row ? "Stopping…" : "Stop"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setBuilderRow(s.row)}
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSequence(s.row)}
+                    disabled={deletingSeqRow === s.row}
+                    className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                  >
+                    {deletingSeqRow === s.row ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <h2 className="text-sm font-semibold text-neutral-700 mb-3">Campaign history</h2>
+      {ranSequences.length === 0 && <p className="text-sm text-neutral-400 mb-10">No campaigns have run yet.</p>}
+      <div className="space-y-3 mb-10">
+        {ranSequences.map((s) => {
+          const steps = safeParseSteps(s.nodes);
+          const { names, description } = resolveRecipients(s.audience);
+          return (
+            <Card key={s.row}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-base font-semibold text-neutral-900">{s.name}</p>
+                  <p className="text-sm text-neutral-500 mt-0.5">
+                    Started {s.startDate || "—"} · Step {s.currentStep || "0"} of {steps.filter((st) => st.type === "email").length}
+                    {s.nextRunAt && ` · Next run ${new Date(s.nextRunAt).toLocaleString()}`}
+                    {s.lastSentAt && ` · Last sent ${new Date(s.lastSentAt).toLocaleString()}`}
+                  </p>
+                  {s.notes && <p className="text-sm text-amber-700 mt-1">{s.notes}</p>}
+                  {names.length > 0 ? (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-medium text-neutral-700 mr-0.5">
+                        Sent to {names.length} {names.length === 1 ? "person" : "people"}:
+                      </span>
+                      {names.map((n, i) => (
+                        <span
+                          key={`${n}-${i}`}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 pl-1 pr-2.5 py-1 text-xs font-medium text-blue-700"
+                        >
+                          <Avatar name={n} size="sm" />
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-600 mt-2">
+                      <span className="font-medium text-neutral-700">Sent to: </span>
+                      {description} (resolved by Grok at send time)
+                    </p>
+                  )}
+                </div>
+                <Badge>{s.status}</Badge>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* One-off campaigns — temporarily hidden, sequences cover this now */}
+      {ONE_OFF_CAMPAIGNS_ENABLED && (
+      <>
+      <h2 className="text-sm font-semibold text-neutral-700 mb-3">One-off campaigns</h2>
       <div className="flex items-center justify-end gap-2 mb-6">
         {selected.size > 0 && (
           <button
@@ -2141,6 +2505,8 @@ export function CampaignsView() {
             if (message) throw new Error(message);
           }}
         />
+      )}
+      </>
       )}
     </div>
   );
@@ -2436,6 +2802,7 @@ export function EmailTemplatesView() {
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingRow, setEditingRow] = useState<number | null>(null);
   const [deletingRow, setDeletingRow] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -2480,20 +2847,24 @@ export function EmailTemplatesView() {
 
       <div className="mb-6">
         <button
-          onClick={() => setShowForm((s) => !s)}
-          className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800"
+          onClick={() => {
+            setEditingRow(null);
+            setShowForm((s) => !s);
+          }}
+          className="inline-flex items-center gap-2 rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700"
         >
           <Plus className="h-4 w-4" strokeWidth={2} />
-          {showForm ? "Cancel" : "New template"}
+          {showForm && editingRow === null ? "Cancel" : "New template"}
         </button>
       </div>
 
-      {showForm && (
-        <NewTemplateForm
-          onCreated={async () => {
+      {showForm && editingRow === null && (
+        <TemplateForm
+          onDone={async () => {
             setShowForm(false);
             await load();
           }}
+          onCancel={() => setShowForm(false)}
         />
       )}
 
@@ -2517,34 +2888,73 @@ export function EmailTemplatesView() {
       )}
 
       <div className="space-y-3">
-        {(templates ?? []).map((t) => (
-          <Card key={t.row}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-base font-semibold text-neutral-900">{t.name}</p>
-                <p className="text-sm text-neutral-400 mt-1">Subject: {t.subject}</p>
-                <p className="text-sm text-neutral-600 mt-2 max-w-xl whitespace-pre-line">{t.body}</p>
-                {t.created && <p className="text-xs text-neutral-400 mt-2">Created {t.created}</p>}
+        {(templates ?? []).map((t) =>
+          editingRow === t.row ? (
+            <TemplateForm
+              key={t.row}
+              initial={t}
+              onDone={async () => {
+                setEditingRow(null);
+                await load();
+              }}
+              onCancel={() => setEditingRow(null)}
+            />
+          ) : (
+            <Card key={t.row} className="hover:border-blue-200 transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-neutral-900">{t.name}</p>
+                  {t.created && <p className="text-xs text-neutral-400 mt-0.5">Created {t.created}</p>}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setShowForm(false);
+                      setEditingRow(t.row);
+                    }}
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(t.row)}
+                    disabled={deletingRow === t.row}
+                    className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
+                  >
+                    {deletingRow === t.row ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => handleDelete(t.row)}
-                disabled={deletingRow === t.row}
-                className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-red-600 disabled:opacity-50"
-              >
-                {deletingRow === t.row ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          </Card>
-        ))}
+
+              <div className="mt-4 rounded-xl border border-neutral-100 bg-neutral-50/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Subject</p>
+                <p className="text-sm text-neutral-900 mt-1">{t.subject}</p>
+                <div className="mt-3 pt-3 border-t border-neutral-200">
+                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Body</p>
+                  <p className="text-sm text-neutral-700 mt-1 whitespace-pre-line">{t.body}</p>
+                </div>
+              </div>
+            </Card>
+          )
+        )}
       </div>
     </div>
   );
 }
 
-function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
-  const [name, setName] = useState("");
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+function TemplateForm({
+  initial,
+  onDone,
+  onCancel,
+}: {
+  initial?: EmailTemplate;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [body, setBody] = useState(initial?.body ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brief, setBrief] = useState("");
@@ -2585,25 +2995,25 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
     setSubmitting(true);
     try {
       const res = await fetch("/api/email-templates", {
-        method: "POST",
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, subject, body }),
+        body: JSON.stringify(isEdit ? { row: initial!.row, name, subject, body } : { name, subject, body }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Failed to create template.");
+        setError(data.error ?? `Failed to ${isEdit ? "save" : "create"} template.`);
         return;
       }
-      onCreated();
+      onDone();
     } catch {
-      setError("Failed to create template.");
+      setError(`Failed to ${isEdit ? "save" : "create"} template.`);
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-6 border-blue-200">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="text-sm font-medium text-neutral-700 block mb-1">Template name</label>
@@ -2611,31 +3021,33 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             placeholder="e.g. Monthly newsletter"
           />
         </div>
 
-        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/60 p-4 space-y-2">
-          <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
-          <div className="flex gap-2">
-            <input
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-              placeholder="e.g. welcome new members, friendly and upbeat"
-            />
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={generating}
-              className="rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 whitespace-nowrap"
-            >
-              {generating ? "Generating…" : "Generate with AI"}
-            </button>
+        {!isEdit && (
+          <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/50 p-4 space-y-2">
+            <label className="text-sm font-medium text-neutral-700 block">Give AI a rough idea, it&apos;ll draft the rest</label>
+            <div className="flex gap-2">
+              <input
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                className="flex-1 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                placeholder="e.g. welcome new members, friendly and upbeat"
+              />
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={generating}
+                className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+              >
+                {generating ? "Generating…" : "Generate with AI"}
+              </button>
+            </div>
+            {genError && <p className="text-sm text-red-600">{genError}</p>}
           </div>
-          {genError && <p className="text-sm text-red-600">{genError}</p>}
-        </div>
+        )}
 
         <div>
           <label className="text-sm font-medium text-neutral-700 block mb-1">Subject</label>
@@ -2643,7 +3055,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             required
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             placeholder="Use {First name} for personalization"
           />
         </div>
@@ -2654,18 +3066,27 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             rows={6}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             placeholder="Use {First name} for personalization"
           />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-full bg-neutral-900 text-white px-5 py-2.5 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
-        >
-          {submitting ? "Saving…" : "Save template"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-full bg-blue-600 text-white px-5 py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : isEdit ? "Save changes" : "Save template"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full border border-neutral-200 px-5 py-2.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+          >
+            Cancel
+          </button>
+        </div>
       </form>
     </Card>
   );
@@ -2812,7 +3233,12 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
                       />
                     )}
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={m.name} size="sm" />
+                      {m.name}
+                    </span>
+                  </td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.membership}</td>
                   <td className="py-2.5 pr-4 whitespace-nowrap">
                     <TrialDraftCell
@@ -3263,7 +3689,12 @@ function AttendanceDraftTable({
                       />
                     )}
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{m.name}</td>
+                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={m.name} size="sm" />
+                      {m.name}
+                    </span>
+                  </td>
                   <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.detail}</td>
                   <td className="py-2.5 pr-4 whitespace-nowrap">
                     {!campaign ? (

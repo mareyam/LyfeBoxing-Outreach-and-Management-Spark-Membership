@@ -72,6 +72,24 @@ export function Badge({ children }: { children: string }) {
   );
 }
 
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
+  const dims = size === "sm" ? "h-7 w-7 text-[11px]" : "h-8 w-8 text-xs";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 font-semibold ${dims}`}
+    >
+      {initialsOf(name || "?")}
+    </span>
+  );
+}
+
 export function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
