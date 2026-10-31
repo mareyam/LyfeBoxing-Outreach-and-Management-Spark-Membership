@@ -21,6 +21,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Users,
   X,
 } from "lucide-react";
 import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
@@ -4095,7 +4096,12 @@ export function TrialConversionView() {
       <SheetGate tab="All Memberships">
         {(rows) => {
           const trialMembers = rows
-            .map((r) => ({ name: findField(r, "name"), email: findField(r, "email"), membership: findField(r, "membership") }))
+            .map((r) => ({
+              name: findField(r, "name"),
+              email: findField(r, "email"),
+              membership: findField(r, "membership"),
+              expires: findField(r, "expires"),
+            }))
             .filter((m) => TRIAL_MEMBERSHIP_NAMES.includes(m.membership));
           return <TrialTable trialMembers={trialMembers} />;
         }}
@@ -4104,9 +4110,22 @@ export function TrialConversionView() {
   );
 }
 
-type TrialSort = "name-asc" | "membership-asc";
+/** "Ignite Pro | Adult Boxing | 3-Class Trial for $19.95" -> { title: "Ignite Pro | Adult Boxing", subtitle: "3-Class Trial for $19.95" }. */
+function splitMembershipLabel(membership: string): { title: string; subtitle: string } {
+  const parts = membership.split("|").map((p) => p.trim());
+  if (parts.length > 1) {
+    return { title: parts.slice(0, -1).join(" | "), subtitle: parts[parts.length - 1] };
+  }
+  return { title: membership, subtitle: "Standard Trial" };
+}
 
-function TrialTable({ trialMembers }: { trialMembers: { name: string; email: string; membership: string }[] }) {
+type TrialSort = "name-asc" | "membership-asc" | "ends-asc";
+
+function TrialTable({
+  trialMembers,
+}: {
+  trialMembers: { name: string; email: string; membership: string; expires: string }[];
+}) {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -4162,6 +4181,20 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
     return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
   }
 
+  function daysUntil(dateStr: string): number | null {
+    const d = parseSlashDate(dateStr);
+    if (!d) return null;
+    return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  }
+
+  const expiringSoonCount = trialMembers.filter((m) => {
+    const d = daysUntil(m.expires);
+    return d !== null && d <= 2;
+  }).length;
+  const draftsGeneratedCount = campaigns
+    ? trialMembers.filter((m) => campaigns.find((c) => c.notes === trialTag(m.name))).length
+    : 0;
+
   const membershipOptions = Array.from(new Set(trialMembers.map((m) => m.membership))).sort();
 
   const q = query.trim().toLowerCase();
@@ -4180,10 +4213,20 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
         return a.name.localeCompare(b.name);
       case "membership-asc":
         return a.membership.localeCompare(b.membership);
+      case "ends-asc": {
+        const aDays = daysUntil(a.expires);
+        const bDays = daysUntil(b.expires);
+        if (aDays === null && bDays === null) return 0;
+        if (aDays === null) return 1;
+        if (bDays === null) return -1;
+        return aDays - bDays;
+      }
       default:
         return 0;
     }
   });
+
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
 
   const activeFilterCount = [membershipFilter].filter(Boolean).length;
   function clearFilters() {
@@ -4192,34 +4235,85 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
 
   return (
     <>
-      <Card className="mb-6">
-        <p className="font-semibold text-neutral-900">
-          {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}
-        </p>
-        <p className="text-sm text-neutral-500 mt-1 mb-4">
-          Write what the upgrade offer should say, generate it once, then edit or send per contact below — or send to all at once.
-        </p>
-        <BriefInput brief={brief} setBrief={setBrief} placeholder="e.g. offer 10% off their first month if they upgrade this week" />
-        <div className="flex items-center gap-2">
-          {selected.size > 0 && (
-            <SendSelectedButton
-              campaigns={campaigns ?? []}
-              selectedNames={selected}
-              emailFor={emailFor}
-              tagFn={trialTag}
-              onDone={async () => {
-                setSelected(new Set());
-                await loadCampaigns();
-              }}
-            />
-          )}
-          <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-9 w-9 rounded-full bg-indigo-50 flex items-center justify-center">
+              <Users className="h-4 w-4 text-indigo-500" strokeWidth={1.75} />
+            </div>
+            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-600">
+              Active Trials
+            </span>
+          </div>
+          <p className="text-sm text-neutral-500">Total Trial Members</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{trialMembers.length} Members</p>
         </div>
-      </Card>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-9 w-9 rounded-full bg-emerald-50 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-emerald-500" strokeWidth={1.75} />
+            </div>
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">
+              This week
+            </span>
+          </div>
+          <p className="text-sm text-neutral-500">Drafts Generated</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{draftsGeneratedCount} Members</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center">
+              <Clock className="h-4 w-4 text-red-500" strokeWidth={1.75} />
+            </div>
+            <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+              Expiring Soon
+            </span>
+          </div>
+          <p className="text-sm text-neutral-500">Ending in 48h</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{expiringSoonCount} Members</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-6 items-start">
+        <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            CONVERSION AI
+          </span>
+          <p className="text-lg font-semibold mt-3">Upgrade Campaigns</p>
+          <p className="text-sm text-indigo-100 mt-1">
+            Personalize the upgrade offer for {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}. Mention special
+            discounts or new programs to increase conversion.
+          </p>
+          <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">YOUR UPGRADE OFFER</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="e.g. Offer 10% off their first month if they upgrade this week, mention our upcoming boxing tournament..."
+            rows={3}
+            className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+          />
+          {selected.size > 0 && (
+            <div className="mt-3 [&_button]:w-full [&_button]:justify-center [&_button]:border-white/30 [&_button]:text-white [&_button]:hover:bg-indigo-600">
+              <SendSelectedButton
+                campaigns={campaigns ?? []}
+                selectedNames={selected}
+                emailFor={emailFor}
+                tagFn={trialTag}
+                onDone={async () => {
+                  setSelected(new Set());
+                  await loadCampaigns();
+                }}
+              />
+            </div>
+          )}
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
+            <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+          </div>
+        </div>
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <p className="text-base font-semibold text-neutral-900">Member List</p>
+          <p className="text-base font-semibold text-neutral-900">Trial Members</p>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <button
@@ -4266,12 +4360,13 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
             >
               <option value="name-asc">Name (A–Z)</option>
               <option value="membership-asc">Membership (A–Z)</option>
+              <option value="ends-asc">Ends In (Soonest)</option>
             </select>
             <div className="relative w-56 shrink-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
               <input
                 type="text"
-                placeholder="Search members..."
+                placeholder="Search trials..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
@@ -4283,18 +4378,20 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
           <thead>
             <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
               <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4 w-[32%]">Member</th>
-              <th className="py-3 pr-4 w-[24%]">Membership</th>
-              <th className="py-3 pr-4 w-[20%]">Status</th>
-              <th className="py-3 pr-4 w-[20%]">Actions</th>
+              <th className="py-3 pr-4 w-[28%]">Name</th>
+              <th className="py-3 pr-4 w-[28%]">Membership Program</th>
+              <th className="py-3 pr-4 w-[16%]">Ends In</th>
+              <th className="py-3 pr-4 w-[22%]">Draft Action</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((m, i) => {
+            {pageItems.map((m, i) => {
               const canSelect = selectableNames.includes(m.name);
               const campaign = campaigns?.find((c) => c.notes === trialTag(m.name));
               const draftStatus = campaign?.status;
               const hasEmail = !!emailFor(m.name, m.email);
+              const { title, subtitle } = splitMembershipLabel(m.membership);
+              const daysLeft = daysUntil(m.expires);
               return (
                 <tr
                   key={`${m.name}-${i}`}
@@ -4319,12 +4416,27 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
                       </span>
                     </span>
                   </td>
-                  <td className="py-3 pr-4">
-                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.membership)}`}>
-                      {m.membership}
-                    </span>
+                  <td className="py-3 pr-4 min-w-0">
+                    <span className="block text-neutral-900 truncate">{title}</span>
+                    <span className="block text-xs text-neutral-400 truncate">{subtitle}</span>
                   </td>
-                  <td className="py-3 pr-4 text-neutral-500 truncate">{draftStatus || "No draft"}</td>
+                  <td className="py-3 pr-4">
+                    {daysLeft === null ? (
+                      <span className="text-neutral-400">—</span>
+                    ) : daysLeft <= 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600">
+                        Ending today
+                      </span>
+                    ) : daysLeft <= 2 ? (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                        {daysLeft} day{daysLeft === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+                        {daysLeft} days
+                      </span>
+                    )}
+                  </td>
                   <td className="py-3 pr-4">
                     {hasEmail ? (
                       <TrialDraftCell
@@ -4348,10 +4460,27 @@ function TrialTable({ trialMembers }: { trialMembers: { name: string; email: str
         </table>
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
           <p className="text-sm text-neutral-500">
-            Showing {sorted.length} of {trialMembers.length} members
+            Showing {pageItems.length} of {sorted.length} trial members
           </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page <= 1}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            </button>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page >= totalPages}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </Card>
+      </div>
 
       {openDraftFor && openMember && openCampaign && (
         <DraftModal
