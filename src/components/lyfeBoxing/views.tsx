@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Filter,
   Mail,
   MessageSquare,
   Plus,
@@ -897,12 +898,19 @@ function MonthSelector() {
   );
 }
 
+type CancelledSort = "cancelled-desc" | "cancelled-asc" | "signed-desc" | "signed-asc" | "membership-asc" | "category-asc" | "reason-asc";
+
 function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [brief, setBrief] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [membershipFilter, setMembershipFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [reasonFilter, setReasonFilter] = useState("");
+  const [sortBy, setSortBy] = useState<CancelledSort>("cancelled-desc");
   const emailFor = useContactEmails();
 
   const loadCampaigns = useCallback(async () => {
@@ -938,15 +946,52 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   }
   const winbackEligible = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).length;
 
-  const q = query.trim().toLowerCase();
-  const filtered = q
-    ? mapped.filter((c) => {
-        const email = emailFor(c.name, c.email).toLowerCase();
-        return c.name.toLowerCase().includes(q) || email.includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q);
-      })
-    : mapped;
+  const membershipOptions = Array.from(new Set(mapped.map((c) => c.membership).filter(Boolean))).sort();
+  const categoryOptions = Array.from(new Set(mapped.map((c) => c.quitCategory || "Not Assigned"))).sort();
+  const reasonOptions = Array.from(new Set(mapped.map((c) => c.reason).filter(Boolean))).sort();
 
-  const { pageItems, page, setPage, totalPages } = usePagination(filtered);
+  const q = query.trim().toLowerCase();
+  const filtered = mapped.filter((c) => {
+    if (q) {
+      const email = emailFor(c.name, c.email).toLowerCase();
+      const matches = c.name.toLowerCase().includes(q) || email.includes(q) || c.membership.toLowerCase().includes(q) || c.quitCategory.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (membershipFilter && c.membership !== membershipFilter) return false;
+    if (categoryFilter && (c.quitCategory || "Not Assigned") !== categoryFilter) return false;
+    if (reasonFilter && c.reason !== reasonFilter) return false;
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case "cancelled-desc":
+        return (parseSlashDate(b.cancelledDate)?.getTime() ?? 0) - (parseSlashDate(a.cancelledDate)?.getTime() ?? 0);
+      case "cancelled-asc":
+        return (parseSlashDate(a.cancelledDate)?.getTime() ?? 0) - (parseSlashDate(b.cancelledDate)?.getTime() ?? 0);
+      case "signed-desc":
+        return (parseSlashDate(b.signedDate)?.getTime() ?? 0) - (parseSlashDate(a.signedDate)?.getTime() ?? 0);
+      case "signed-asc":
+        return (parseSlashDate(a.signedDate)?.getTime() ?? 0) - (parseSlashDate(b.signedDate)?.getTime() ?? 0);
+      case "membership-asc":
+        return a.membership.localeCompare(b.membership);
+      case "category-asc":
+        return (a.quitCategory || "Not Assigned").localeCompare(b.quitCategory || "Not Assigned");
+      case "reason-asc":
+        return a.reason.localeCompare(b.reason);
+      default:
+        return 0;
+    }
+  });
+
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
+
+  const activeFilterCount = [membershipFilter, categoryFilter, reasonFilter].filter(Boolean).length;
+  function clearFilters() {
+    setMembershipFilter("");
+    setCategoryFilter("");
+    setReasonFilter("");
+  }
 
   const openContact = pageItems.find((c) => c.name === openDraftFor);
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === winbackTag(openDraftFor)) : undefined;
@@ -1021,17 +1066,100 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-base font-semibold text-neutral-900">Member List</p>
-          <div className="relative w-64 shrink-0">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
-            <input
-              type="text"
-              placeholder="Search members..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setFilterOpen((o) => !o)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                <Filter className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              {filterOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-10 w-72 rounded-lg border border-neutral-200 bg-white shadow-md p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Membership</label>
+                    <select
+                      value={membershipFilter}
+                      onChange={(e) => setMembershipFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All memberships</option>
+                      {membershipOptions.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Category</label>
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All categories</option>
+                      {categoryOptions.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Reason</label>
+                    <select
+                      value={reasonFilter}
+                      onChange={(e) => setReasonFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All reasons</option>
+                      {reasonOptions.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as CancelledSort)}
+              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+            >
+              <option value="cancelled-desc">Cancellation Date (Newest)</option>
+              <option value="cancelled-asc">Cancellation Date (Oldest)</option>
+              <option value="signed-desc">Signed Date (Newest)</option>
+              <option value="signed-asc">Signed Date (Oldest)</option>
+              <option value="membership-asc">Membership (A–Z)</option>
+              <option value="category-asc">Category (A–Z)</option>
+              <option value="reason-asc">Reason (A–Z)</option>
+            </select>
+            <div className="relative w-56 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+              <input
+                type="text"
+                placeholder="Search members..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+            </div>
           </div>
         </div>
         {selected.size > 0 && (
@@ -1048,19 +1176,15 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             />
           </div>
         )}
-        <p className="text-sm text-neutral-400 mb-3">
-          Showing {filtered.length} of {mapped.length} cancellations
-        </p>
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead>
             <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
               <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4">Member</th>
-              <th className="py-3 pr-4">Reason Category</th>
-              <th className="py-3 pr-4">Plan</th>
-              <th className="py-3 pr-4">Status</th>
-              <th className="py-3 pr-4">Actions</th>
+              <th className="py-3 pr-4 w-[26%]">Member</th>
+              <th className="py-3 pr-4 w-[20%]">Reason Category</th>
+              <th className="py-3 pr-4 w-[16%]">Plan</th>
+              <th className="py-3 pr-4 w-[20%]">Status</th>
+              <th className="py-3 pr-4 w-[14%]">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1085,12 +1209,12 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                       />
                     )}
                   </td>
-                  <td className="py-3 pr-4 whitespace-nowrap">
-                    <span className="flex items-center gap-2.5">
+                  <td className="py-3 pr-4">
+                    <span className="flex items-center gap-2.5 min-w-0">
                       <Avatar name={c.name} size="sm" />
-                      <span>
-                        <span className="block text-neutral-900 font-semibold">{c.name || "—"}</span>
-                        <span className="block text-xs text-neutral-400">{emailFor(c.name, c.email) || "—"}</span>
+                      <span className="min-w-0">
+                        <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
+                        <span className="block text-xs text-neutral-400 truncate">{emailFor(c.name, c.email) || "—"}</span>
                       </span>
                     </span>
                   </td>
@@ -1103,14 +1227,14 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                       {c.quitCategory || c.reason || "Not Assigned"}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-neutral-700 whitespace-nowrap">{c.membership || "—"}</td>
-                  <td className="py-3 pr-4 whitespace-nowrap">
+                  <td className="py-3 pr-4 text-neutral-700 truncate">{c.membership || "—"}</td>
+                  <td className="py-3 pr-4">
                     <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${eligible ? "text-amber-600" : "text-neutral-400"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${eligible ? "bg-amber-500" : "bg-neutral-300"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${eligible ? "bg-amber-500" : "bg-neutral-300"}`} />
                       {eligible ? "Win-back eligible" : "Closed"}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 whitespace-nowrap">
+                  <td className="py-3 pr-4">
                     {eligible ? (
                       <WinbackDraftCell
                         name={c.name}
@@ -1129,7 +1253,26 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             })}
           </tbody>
         </table>
-        <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
+        <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
+          <p className="text-sm text-neutral-500">
+            Showing {pageItems.length} of {filtered.length} cancellations
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page <= 1}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            </button>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page >= totalPages}
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </Card>
 
