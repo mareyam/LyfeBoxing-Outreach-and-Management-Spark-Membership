@@ -846,6 +846,39 @@ function winbackTag(name: string): string {
   return `winback:${name}`;
 }
 
+/** Counts items by key, sorted highest-first. */
+function countBy<T>(items: T[], keyFn: (item: T) => string): [string, number][] {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    const key = keyFn(item);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function FrequencyChart({ title, subtitle, data }: { title: string; subtitle: string; data: [string, number][] }) {
+  const max = Math.max(...data.map(([, count]) => count), 1);
+  return (
+    <Card>
+      <p className="text-sm font-semibold text-neutral-900">{title}</p>
+      <p className="text-[11px] text-neutral-400 uppercase tracking-wide mb-4">{subtitle}</p>
+      <div className="space-y-2.5">
+        {data.map(([label, count]) => (
+          <div key={label} className="flex items-center gap-2">
+            <span className="w-24 shrink-0 text-xs text-neutral-500 truncate text-right" title={label}>
+              {label}
+            </span>
+            <div className="flex-1 h-4 rounded bg-neutral-100 overflow-hidden">
+              <div className="h-full rounded bg-indigo-500" style={{ width: `${(count / max) * 100}%` }} />
+            </div>
+            <span className="w-5 shrink-0 text-xs text-neutral-500">{count}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function CancelledView() {
   return (
     <div className="max-w-6xl">
@@ -907,7 +940,6 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [brief, setBrief] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [campaignOpen, setCampaignOpen] = useState(false);
   const [membershipFilter, setMembershipFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
@@ -950,6 +982,9 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const membershipOptions = Array.from(new Set(mapped.map((c) => c.membership).filter(Boolean))).sort();
   const categoryOptions = Array.from(new Set(mapped.map((c) => c.quitCategory || "Not Assigned"))).sort();
   const reasonOptions = Array.from(new Set(mapped.map((c) => c.reason).filter(Boolean))).sort();
+
+  const reasonCounts = countBy(mapped, (c) => c.quitCategory || "Not Assigned");
+  const planCounts = countBy(mapped, (c) => c.membership || "Unknown");
 
   const q = query.trim().toLowerCase();
   const filtered = mapped.filter((c) => {
@@ -1039,42 +1074,10 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <MonthSelector />
-          <div className="relative">
-            <button
-              onClick={() => setCampaignOpen((o) => !o)}
-              className="inline-flex items-center rounded-full bg-blue-700 px-3.5 py-2 text-xs font-semibold tracking-wide text-white hover:bg-blue-800"
-            >
-              AI CAMPAIGN
-            </button>
-            {campaignOpen && (
-              <div className="absolute right-0 top-full mt-1.5 z-20 w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-lg">
-                <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
-                  AI CAMPAIGN
-                </span>
-                <p className="text-lg font-semibold mt-3">Win-back Members</p>
-                <p className="text-sm text-blue-100 mt-1">
-                  {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized
-                  re-engagement drafts to send them automatically.
-                </p>
-                <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
-                <textarea
-                  value={brief}
-                  onChange={(e) => setBrief(e.target.value)}
-                  placeholder="e.g. Offer a free class..."
-                  rows={2}
-                  className="w-full rounded-xl bg-blue-600/60 border border-blue-400/40 px-3 py-2 text-sm text-white placeholder:text-blue-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-                />
-                <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-blue-700 [&_button]:hover:bg-blue-50">
-                  <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <MonthSelector />
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-base font-semibold text-neutral-900">Member List</p>
@@ -1285,6 +1288,34 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
           </div>
         </div>
       </Card>
+
+      <div className="space-y-6">
+        <div className="rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            AI CAMPAIGN
+          </span>
+          <p className="text-lg font-semibold mt-3">Win-back Members</p>
+          <p className="text-sm text-blue-100 mt-1">
+            {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized re-engagement
+            drafts to send them automatically.
+          </p>
+          <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="e.g. Offer a free class..."
+            rows={2}
+            className="w-full rounded-xl bg-blue-600/60 border border-blue-400/40 px-3 py-2 text-sm text-white placeholder:text-blue-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+          />
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-blue-700 [&_button]:hover:bg-blue-50">
+            <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+          </div>
+        </div>
+
+        <FrequencyChart title="Cancellation Reasons" subtitle="By reason category" data={reasonCounts} />
+        <FrequencyChart title="Cancellations by Plan" subtitle="By membership plan" data={planCounts} />
+      </div>
+      </div>
 
       {openDraftFor && openContact && openCampaign && (
         <DraftModal
