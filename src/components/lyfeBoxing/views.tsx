@@ -17,6 +17,7 @@ import {
   Mail,
   MessageSquare,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -2140,9 +2141,28 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
     }
   }
 
+  /** Re-drafts everyone not already sent/queued, overwriting any existing draft with this tone. */
+  async function regenerateAllDrafts() {
+    if (!brief.trim()) throw new Error("Type what the draft should say first.");
+    const draft = await generateBriefDraft({ brief, channel: "Email", contextHint: PAST_DUE_CONTEXT_HINT });
+    const targets = members.filter((m) => !["Sent", "Sending", "Queued"].includes(m.emailStatus));
+    for (const m of targets) {
+      const subject = personalize(draft.subject, m.name);
+      const messageBody = personalize(draft.body, m.name);
+      const res = await fetch("/api/past-due/draft", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ row: m.row, subject, messageBody }),
+      });
+      if (res.ok) {
+        patchMember(m.row, { emailSubject: subject, emailBody: messageBody, emailStatus: "Draft" });
+      }
+    }
+  }
+
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 items-stretch">
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center">
@@ -2167,12 +2187,41 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
           <p className="text-sm text-neutral-500">Total overdue amount</p>
           <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">${totalOwed.toLocaleString()}</p>
         </div>
+
+        <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            AI COLLECTIONS
+          </span>
+          <p className="text-lg font-semibold mt-3">Smart Reminders</p>
+          <p className="text-sm text-indigo-100 mt-1">
+            Customize your collection tone. AI will generate personalized reminders for each member based on their history.
+          </p>
+          <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">REMINDER TONE / GOAL</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="e.g. A friendly reminder, mention they can update their card online easily..."
+            rows={2}
+            className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+          />
+          {missingDraftCount > 0 && (
+            <p className="inline-flex items-start gap-1.5 text-xs text-indigo-100 mt-3">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.75} />
+              All {missingDraftCount} draft{missingDraftCount === 1 ? "" : "s"} will be generated based on this goal.
+            </p>
+          )}
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
+            <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
+          </div>
+          <div className="mt-3">
+            <RegenerateAllLink onRegenerate={regenerateAllDrafts} />
+          </div>
+        </div>
       </div>
 
       {members.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No one is past due.</Card>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <p className="text-base font-semibold text-neutral-900">Member List</p>
@@ -2338,34 +2387,6 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             </div>
           </div>
         </Card>
-
-        <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
-          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
-            AI COLLECTIONS
-          </span>
-          <p className="text-lg font-semibold mt-3">Smart Reminders</p>
-          <p className="text-sm text-indigo-100 mt-1">
-            Customize your collection tone. AI will generate personalized reminders for each member based on their history.
-          </p>
-          <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">REMINDER TONE / GOAL</label>
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="e.g. A friendly reminder, mention they can update their card online easily..."
-            rows={3}
-            className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-          />
-          {missingDraftCount > 0 && (
-            <p className="inline-flex items-start gap-1.5 text-xs text-indigo-100 mt-3">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.75} />
-              All {missingDraftCount} draft{missingDraftCount === 1 ? "" : "s"} will be generated based on this goal.
-            </p>
-          )}
-          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
-            <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
-          </div>
-        </div>
-        </div>
       )}
 
       {open && (
@@ -2495,6 +2516,35 @@ function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number;
         <Sparkles className="h-4 w-4" strokeWidth={2} />
         {state === "sending" ? "Drafting…" : `Generate all (${missingCount})`}
       </button>
+    </div>
+  );
+}
+
+function RegenerateAllLink({ onRegenerate }: { onRegenerate: () => Promise<void> }) {
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <button
+        onClick={async () => {
+          setState("sending");
+          setError(null);
+          try {
+            await onRegenerate();
+            setState("idle");
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "Something went wrong — try again.");
+            setState("error");
+          }
+        }}
+        disabled={state === "sending"}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-100 hover:text-white disabled:opacity-50"
+      >
+        <RefreshCw className="h-3 w-3" strokeWidth={2} />
+        {state === "sending" ? "Regenerating…" : "Regenerate all drafts"}
+      </button>
+      {state === "error" && error && <p className="text-xs text-red-200">{error}</p>}
     </div>
   );
 }
