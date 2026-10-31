@@ -4274,43 +4274,7 @@ function TrialTable({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-6 items-start">
-        <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
-          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
-            CONVERSION AI
-          </span>
-          <p className="text-lg font-semibold mt-3">Upgrade Campaigns</p>
-          <p className="text-sm text-indigo-100 mt-1">
-            Personalize the upgrade offer for {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}. Mention special
-            discounts or new programs to increase conversion.
-          </p>
-          <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">YOUR UPGRADE OFFER</label>
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="e.g. Offer 10% off their first month if they upgrade this week, mention our upcoming boxing tournament..."
-            rows={3}
-            className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-          />
-          {selected.size > 0 && (
-            <div className="mt-3 [&_button]:w-full [&_button]:justify-center [&_button]:border-white/30 [&_button]:text-white [&_button]:hover:bg-indigo-600">
-              <SendSelectedButton
-                campaigns={campaigns ?? []}
-                selectedNames={selected}
-                emailFor={emailFor}
-                tagFn={trialTag}
-                onDone={async () => {
-                  setSelected(new Set());
-                  await loadCampaigns();
-                }}
-              />
-            </div>
-          )}
-          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
-            <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-base font-semibold text-neutral-900">Trial Members</p>
@@ -4480,6 +4444,42 @@ function TrialTable({
           </div>
         </div>
       </Card>
+
+      <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
+        <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+          CONVERSION AI
+        </span>
+        <p className="text-lg font-semibold mt-3">Upgrade Campaigns</p>
+        <p className="text-sm text-indigo-100 mt-1">
+          Personalize the upgrade offer for {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}. Mention special
+          discounts or new programs to increase conversion.
+        </p>
+        <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">YOUR UPGRADE OFFER</label>
+        <textarea
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          placeholder="e.g. Offer 10% off their first month if they upgrade this week, mention our upcoming boxing tournament..."
+          rows={3}
+          className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+        />
+        {selected.size > 0 && (
+          <div className="mt-3 [&_button]:w-full [&_button]:justify-center [&_button]:border-white/30 [&_button]:text-white [&_button]:hover:bg-indigo-600">
+            <SendSelectedButton
+              campaigns={campaigns ?? []}
+              selectedNames={selected}
+              emailFor={emailFor}
+              tagFn={trialTag}
+              onDone={async () => {
+                setSelected(new Set());
+                await loadCampaigns();
+              }}
+            />
+          </div>
+        )}
+        <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
+          <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+        </div>
+      </div>
       </div>
 
       {openDraftFor && openMember && openCampaign && (
