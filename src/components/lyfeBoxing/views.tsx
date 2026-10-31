@@ -2,7 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Mail, MessageSquare, Plus, Send, Sparkles, X } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Calendar as CalendarIcon,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  DollarSign,
+  Mail,
+  MessageSquare,
+  PieChart,
+  Plus,
+  RotateCcw,
+  Search,
+  Send,
+  Sparkles,
+  UserMinus,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
 import SequenceBuilder, { type SequenceStep } from "@/components/lyfeBoxing/SequenceBuilder";
 
@@ -816,8 +835,82 @@ function winbackTag(name: string): string {
 export function CancelledView() {
   return (
     <div className="max-w-6xl">
-      <PageHeader title="Cancelled (October)" subtitle="Members who cancelled this month, with reason and category." tool="Google Sheets (Cancelled Oct)" />
       <SheetGate tab="Cancelled (Oct)">{(rows) => <CancelledTable rows={rows} />}</SheetGate>
+    </div>
+  );
+}
+
+const CANCELLED_MONTHS = ["October 2024", "September 2024", "August 2024"];
+
+/** Only October has a connected sheet right now; the rest are listed but disabled. */
+function MonthSelector() {
+  const [open, setOpen] = useState(false);
+  const selected = CANCELLED_MONTHS[0];
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        <CalendarIcon className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+        {selected}
+        <ChevronDown className={`h-3.5 w-3.5 text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-10 w-44 rounded-lg border border-neutral-200 bg-white shadow-md py-1">
+          {CANCELLED_MONTHS.map((month, i) =>
+            i === 0 ? (
+              <button
+                key={month}
+                onClick={() => setOpen(false)}
+                className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50"
+              >
+                {month}
+              </button>
+            ) : (
+              <div
+                key={month}
+                title="Coming soon"
+                className="px-3 py-2 text-sm text-neutral-300 cursor-not-allowed select-none"
+              >
+                {month}
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  iconBg,
+  iconColor,
+  tag,
+  tagColor,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  iconBg: string;
+  iconColor: string;
+  tag: string;
+  tagColor: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`h-9 w-9 rounded-full flex items-center justify-center ${iconBg}`}>
+          <Icon className={`h-4 w-4 ${iconColor}`} strokeWidth={1.75} />
+        </div>
+        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${tagColor}`}>{tag}</span>
+      </div>
+      <p className="text-sm text-neutral-500">{label}</p>
+      <p className="text-xl font-semibold text-neutral-900 mt-1">{value}</p>
     </div>
   );
 }
@@ -908,18 +1001,108 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
     });
   }
 
+  const primaryCategory = categoryList[0]?.[0] ?? "—";
+  const winbackPct = mapped.length ? Math.round((winbackEligible / mapped.length) * 100) : 0;
+
   return (
     <>
-      <Card className="mb-6">
-        <p className="font-semibold text-neutral-900">
-          Win-back: {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago
-        </p>
-        <p className="text-sm text-neutral-500 mt-1 mb-4">
-          Write what the draft should say, generate it once, then edit or send per contact below — or send to all at once.
-        </p>
-        <BriefInput brief={brief} setBrief={setBrief} placeholder="e.g. offer them a free class to come back, no pressure" />
-        <div className="flex items-center gap-2">
-          {selected.size > 0 && (
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Cancellations</span>
+      </div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
+          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+          </span>
+        </div>
+        <MonthSelector />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          icon={UserMinus}
+          iconBg="bg-rose-50"
+          iconColor="text-rose-500"
+          tag="This month"
+          tagColor="bg-neutral-100 text-neutral-500"
+          label="Total Cancelled"
+          value={`${mapped.length} Member${mapped.length === 1 ? "" : "s"}`}
+        />
+        <StatCard
+          icon={RotateCcw}
+          iconBg="bg-amber-50"
+          iconColor="text-amber-500"
+          tag={`${winbackEligible} Eligible`}
+          tagColor="bg-amber-50 text-amber-600"
+          label="Win-back Opportunity"
+          value={`${winbackPct}% Retrievable`}
+        />
+        <StatCard
+          icon={PieChart}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-500"
+          tag="Top Reason"
+          tagColor="bg-blue-50 text-blue-600"
+          label="Primary Category"
+          value={primaryCategory}
+        />
+        <StatCard
+          icon={DollarSign}
+          iconBg="bg-emerald-50"
+          iconColor="text-emerald-500"
+          tag="No pricing data"
+          tagColor="bg-neutral-100 text-neutral-500"
+          label="Revenue Impact"
+          value="—"
+        />
+      </div>
+
+      <div className="flex justify-end mb-6">
+        <div className="w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            AI CAMPAIGN
+          </span>
+          <p className="text-lg font-semibold mt-3">Win-back Members</p>
+          <p className="text-sm text-blue-100 mt-1">
+            {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized re-engagement
+            drafts to send them automatically.
+          </p>
+          <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="e.g. Offer a free class..."
+            rows={2}
+            className="w-full rounded-xl bg-blue-600/60 border border-blue-400/40 px-3 py-2 text-sm text-white placeholder:text-blue-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+          />
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-blue-700 [&_button]:hover:bg-blue-50">
+            <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+          </div>
+        </div>
+      </div>
+
+      <Card>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <p className="text-base font-semibold text-neutral-900">Member List</p>
+          <div className="relative w-64 shrink-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+            <input
+              type="text"
+              placeholder="Search members..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+            />
+          </div>
+        </div>
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 mb-4">
             <SendSelectedButton
               campaigns={campaigns ?? []}
               selectedNames={selected}
@@ -930,31 +1113,12 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
                 await loadCampaigns();
               }}
             />
-          )}
-          <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
-        </div>
-      </Card>
-      <Card className="mb-6">
-        <p className="text-base text-neutral-500 mb-3">Cancellations by category</p>
-        <div className="flex flex-wrap gap-2">
-          {categoryList.map(([name, count]) => (
-            <span key={name} className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700">
-              {name} <span className="text-neutral-400">· {count}</span>
-            </span>
-          ))}
-        </div>
-      </Card>
-      <input
-        type="text"
-        placeholder="Search by name, email, plan, or reason category..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
-      <p className="text-sm text-neutral-400 mb-3">
-        Showing {filtered.length} of {mapped.length} cancellations
-      </p>
-      <Card className="overflow-x-auto">
+          </div>
+        )}
+        <p className="text-sm text-neutral-400 mb-3">
+          Showing {filtered.length} of {mapped.length} cancellations
+        </p>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-neutral-400 border-b border-neutral-100">
@@ -1021,6 +1185,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
           </tbody>
         </table>
         <PaginationControls page={page} totalPages={totalPages} onChange={setPage} />
+        </div>
       </Card>
 
       {openDraftFor && openContact && openCampaign && (
