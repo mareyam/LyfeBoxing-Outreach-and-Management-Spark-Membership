@@ -9,18 +9,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
   Mail,
   MessageSquare,
-  PieChart,
   Plus,
-  RotateCcw,
   Search,
   Send,
   Sparkles,
-  UserMinus,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
 import SequenceBuilder, { type SequenceStep } from "@/components/lyfeBoxing/SequenceBuilder";
@@ -884,37 +879,6 @@ function MonthSelector() {
   );
 }
 
-function StatCard({
-  icon: Icon,
-  iconBg,
-  iconColor,
-  tag,
-  tagColor,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  iconBg: string;
-  iconColor: string;
-  tag: string;
-  tagColor: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`h-9 w-9 rounded-full flex items-center justify-center ${iconBg}`}>
-          <Icon className={`h-4 w-4 ${iconColor}`} strokeWidth={1.75} />
-        </div>
-        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${tagColor}`}>{tag}</span>
-      </div>
-      <p className="text-sm text-neutral-500">{label}</p>
-      <p className="text-xl font-semibold text-neutral-900 mt-1">{value}</p>
-    </div>
-  );
-}
-
 function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -956,13 +920,6 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   }
   const winbackEligible = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).length;
 
-  const byCategory = new Map<string, number>();
-  for (const c of mapped) {
-    const key = c.quitCategory || "Not Assigned";
-    byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
-  }
-  const categoryList = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1]);
-
   const q = query.trim().toLowerCase();
   const filtered = q
     ? mapped.filter((c) => {
@@ -1001,9 +958,6 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
     });
   }
 
-  const primaryCategory = categoryList[0]?.[0] ?? "—";
-  const winbackPct = mapped.length ? Math.round((winbackEligible / mapped.length) * 100) : 0;
-
   return (
     <>
       <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
@@ -1013,58 +967,16 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
         <span>›</span>
         <span className="text-neutral-600 font-medium">Cancellations</span>
       </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
+
       <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
-          <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
-          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
-            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
-          </span>
-        </div>
-        <MonthSelector />
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          icon={UserMinus}
-          iconBg="bg-rose-50"
-          iconColor="text-rose-500"
-          tag="This month"
-          tagColor="bg-neutral-100 text-neutral-500"
-          label="Total Cancelled"
-          value={`${mapped.length} Member${mapped.length === 1 ? "" : "s"}`}
-        />
-        <StatCard
-          icon={RotateCcw}
-          iconBg="bg-amber-50"
-          iconColor="text-amber-500"
-          tag={`${winbackEligible} Eligible`}
-          tagColor="bg-amber-50 text-amber-600"
-          label="Win-back Opportunity"
-          value={`${winbackPct}% Retrievable`}
-        />
-        <StatCard
-          icon={PieChart}
-          iconBg="bg-indigo-50"
-          iconColor="text-indigo-500"
-          tag="Top Reason"
-          tagColor="bg-blue-50 text-blue-600"
-          label="Primary Category"
-          value={primaryCategory}
-        />
-        <StatCard
-          icon={DollarSign}
-          iconBg="bg-emerald-50"
-          iconColor="text-emerald-500"
-          tag="No pricing data"
-          tagColor="bg-neutral-100 text-neutral-500"
-          label="Revenue Impact"
-          value="—"
-        />
-      </div>
-
-      <div className="flex justify-end mb-6">
-        <div className="w-full lg:w-96 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
+        <div className="flex-1 min-w-0 rounded-2xl bg-blue-700 text-white p-5 shadow-sm">
           <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
             AI CAMPAIGN
           </span>
@@ -1085,6 +997,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             <GenerateAllWinbackButton names={eligibleNames} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
           </div>
         </div>
+        <MonthSelector />
       </div>
 
       <Card>
