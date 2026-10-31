@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ChevronDown,
-  ChevronsLeft,
-  ChevronsRight,
   Search,
   BarChart2,
   Users,
@@ -23,7 +21,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import CompanySwitcher from "./CompanySwitcher";
-import IconRail from "./IconRail";
 
 type SidebarLinkDef = { label: string; href?: string; icon: LucideIcon };
 
@@ -70,11 +67,8 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
   // },
 ];
 
-const COLLAPSE_KEY = "sidebar-collapsed";
-
 export default function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(lyfeBoxingGroups.map((g) => [g.heading, g.links.some((l) => l.href === pathname)]))
   );
@@ -83,53 +77,10 @@ export default function Sidebar() {
     setOpenGroups((prev) => ({ ...prev, [heading]: !prev[heading] }));
   }
 
-  useEffect(() => {
-    try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a per-viewer UI preference from localStorage, only available client-side after mount
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
-    } catch {
-      // ignore — private browsing / blocked storage
-    }
-  }, []);
-
-  function toggleCollapsed() {
-    setCollapsed((c) => {
-      const next = !c;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }
-
-  if (collapsed) {
-    return (
-      <div className="relative h-full shrink-0">
-        <IconRail />
-        <button
-          onClick={toggleCollapsed}
-          title="Expand sidebar"
-          className="absolute -right-2.5 top-4 h-5 w-5 flex items-center justify-center rounded-full border border-blue-100 bg-white text-blue-400 shadow-sm hover:text-blue-600"
-        >
-          <ChevronsRight className="h-3 w-3" strokeWidth={2} />
-        </button>
-      </div>
-    );
-  }
-
   return (
     <aside className="w-72 shrink-0 border-r border-blue-100 bg-white h-full overflow-y-auto flex flex-col">
-      <div className="flex items-start justify-between px-4 pt-4">
+      <div className="px-4 pt-4">
         <CompanySwitcher />
-        <button
-          onClick={toggleCollapsed}
-          title="Collapse sidebar"
-          className="h-7 w-7 shrink-0 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-blue-50 hover:text-blue-600 mt-0.5"
-        >
-          <ChevronsLeft className="h-4 w-4" strokeWidth={1.75} />
-        </button>
       </div>
 
       <div className="px-4 pt-3 pb-3">
