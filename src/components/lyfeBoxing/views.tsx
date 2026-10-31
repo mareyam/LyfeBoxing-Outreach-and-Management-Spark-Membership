@@ -645,6 +645,9 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [planFilter, setPlanFilter] = useState("");
+  const [expiresFilter, setExpiresFilter] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [nextPaymentFilter, setNextPaymentFilter] = useState("");
   const [staffFilter, setStaffFilter] = useState("");
   const [sortBy, setSortBy] = useState<MembershipsSort>("name-asc");
 
@@ -662,6 +665,8 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   const overdueCount = mapped.filter((m) => parseMoney(m.overdue) > 0).length;
 
   const planOptions = Array.from(new Set(mapped.map((m) => m.membership))).sort();
+  const expiresOptions = Array.from(new Set(mapped.map((m) => m.expires).filter(Boolean))).sort();
+  const nextPaymentOptions = Array.from(new Set(mapped.map((m) => m.nextPayment).filter(Boolean))).sort();
   const staffOptions = Array.from(new Set(mapped.map((m) => m.staff).filter(Boolean))).sort();
 
   const q = query.trim().toLowerCase();
@@ -671,6 +676,9 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
       if (!matches) return false;
     }
     if (planFilter && m.membership !== planFilter) return false;
+    if (expiresFilter && m.expires !== expiresFilter) return false;
+    if (overdueOnly && parseMoney(m.overdue) <= 0) return false;
+    if (nextPaymentFilter && m.nextPayment !== nextPaymentFilter) return false;
     if (staffFilter && m.staff !== staffFilter) return false;
     return true;
   });
@@ -690,9 +698,12 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
 
   const { pageItems, page, setPage, totalPages } = usePagination(sorted);
 
-  const activeFilterCount = [planFilter, staffFilter].filter(Boolean).length;
+  const activeFilterCount = [planFilter, expiresFilter, nextPaymentFilter, staffFilter].filter(Boolean).length + (overdueOnly ? 1 : 0);
   function clearFilters() {
     setPlanFilter("");
+    setExpiresFilter("");
+    setOverdueOnly(false);
+    setNextPaymentFilter("");
     setStaffFilter("");
   }
 
@@ -734,6 +745,47 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
                       {planOptions.map((p) => (
                         <option key={p} value={p}>
                           {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Expires</label>
+                    <select
+                      value={expiresFilter}
+                      onChange={(e) => setExpiresFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">Any</option>
+                      {expiresOptions.map((e) => (
+                        <option key={e} value={e}>
+                          {e}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-xs font-medium text-neutral-500">
+                      <input
+                        type="checkbox"
+                        checked={overdueOnly}
+                        onChange={(e) => setOverdueOnly(e.target.checked)}
+                        className="rounded border-neutral-300"
+                      />
+                      Overdue only
+                    </label>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Next Payment</label>
+                    <select
+                      value={nextPaymentFilter}
+                      onChange={(e) => setNextPaymentFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">Any</option>
+                      {nextPaymentOptions.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
                         </option>
                       ))}
                     </select>
