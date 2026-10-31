@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Filter,
   Mail,
   MessageSquare,
@@ -2142,33 +2143,36 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Stat label="Members past due" value={members.length} />
-        <Stat label="Total overdue amount" value={`$${totalOwed.toLocaleString()}`} />
-      </div>
-
-      {members.length > 0 && (
-        <Card className="mb-4">
-          <BriefInput brief={brief} setBrief={setBrief} placeholder="e.g. a friendly reminder, mention they can update their card online" />
-          <div className="flex items-center justify-end gap-2">
-            {selected.size > 0 && (
-              <PastDueSendSelectedButton
-                members={members}
-                selectedRows={selected}
-                emailFor={emailFor}
-                onDone={async () => {
-                  setSelected(new Set());
-                  await refetch();
-                }}
-              />
-            )}
-            <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-9 w-9 rounded-full bg-red-50 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-red-500" strokeWidth={1.75} />
+            </div>
+            <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+              Requires Action
+            </span>
           </div>
-        </Card>
-      )}
+          <p className="text-sm text-neutral-500">Members past due</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{members.length}</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-9 w-9 rounded-full bg-amber-50 flex items-center justify-center">
+              <Clock className="h-4 w-4 text-amber-500" strokeWidth={1.75} />
+            </div>
+            <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600">
+              Overdue
+            </span>
+          </div>
+          <p className="text-sm text-neutral-500">Total overdue amount</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">${totalOwed.toLocaleString()}</p>
+        </div>
+      </div>
 
       {members.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No one is past due.</Card>
       ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <p className="text-base font-semibold text-neutral-900">Member List</p>
@@ -2233,6 +2237,19 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
               </div>
             </div>
           </div>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 mb-4">
+              <PastDueSendSelectedButton
+                members={members}
+                selectedRows={selected}
+                emailFor={emailFor}
+                onDone={async () => {
+                  setSelected(new Set());
+                  await refetch();
+                }}
+              />
+            </div>
+          )}
           <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
@@ -2321,6 +2338,34 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             </div>
           </div>
         </Card>
+
+        <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
+          <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold tracking-wide">
+            AI COLLECTIONS
+          </span>
+          <p className="text-lg font-semibold mt-3">Smart Reminders</p>
+          <p className="text-sm text-indigo-100 mt-1">
+            Customize your collection tone. AI will generate personalized reminders for each member based on their history.
+          </p>
+          <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">REMINDER TONE / GOAL</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="e.g. A friendly reminder, mention they can update their card online easily..."
+            rows={3}
+            className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+          />
+          {missingDraftCount > 0 && (
+            <p className="inline-flex items-start gap-1.5 text-xs text-indigo-100 mt-3">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.75} />
+              All {missingDraftCount} draft{missingDraftCount === 1 ? "" : "s"} will be generated based on this goal.
+            </p>
+          )}
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
+            <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
+          </div>
+        </div>
+        </div>
       )}
 
       {open && (
