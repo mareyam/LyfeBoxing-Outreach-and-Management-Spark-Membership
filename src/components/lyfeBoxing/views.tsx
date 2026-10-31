@@ -748,16 +748,18 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Stat label="Total contacts" value={mapped.length} />
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="text"
+          placeholder="Search by name, email, or type..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full sm:w-80 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+        />
+        <span className="shrink-0 text-sm text-neutral-500">
+          Total contacts: <span className="font-semibold text-neutral-900">{mapped.length}</span>
+        </span>
       </div>
-      <input
-        type="text"
-        placeholder="Search by name, email, or type..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full sm:w-80 mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
-      />
       <p className="text-sm text-neutral-400 mb-3">
         Showing {filtered.length} of {mapped.length} contacts
       </p>
