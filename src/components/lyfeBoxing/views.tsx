@@ -4265,8 +4265,21 @@ const UPGRADE_CONTEXT_HINT =
 
 export function AtRiskView() {
   return (
-    <div className="max-w-6xl">
-      <PageHeader title="At Risk" subtitle="Members who haven't attended in 10+ days." tool="Google Sheets (Attendance) + Campaigns" />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">At Risk</span>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">At Risk</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Members who haven&apos;t attended in 10+ days.</p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
       <SheetGate tab="Attendance">
         {(rows) => {
           const members = rows
@@ -4303,12 +4316,23 @@ export function AtRiskView() {
 
 export function UpgradeCandidatesView() {
   return (
-    <div className="max-w-6xl">
-      <PageHeader
-        title="Upgrade Candidates"
-        subtitle="Light Boxer 1x and Basic Boxer 2x members attending more than their plan allows."
-        tool="Google Sheets (Attendance) + Campaigns"
-      />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Upgrade Candidates</span>
+      </div>
+      <div className="mb-6">
+        <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Upgrade Candidates</h1>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+          Light Boxer 1x and Basic Boxer 2x members attending more than their plan allows.
+        </p>
+        <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+          <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
+        </span>
+      </div>
       <SheetGate tab="Attendance">
         {(rows) => {
           const members = rows
@@ -4371,6 +4395,10 @@ function AttendanceDraftTable({
   const [openDraftFor, setOpenDraftFor] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [brief, setBrief] = useState("");
+  const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"name-asc" | "status-asc">("name-asc");
   const emailFor = useContactEmails();
 
   const loadCampaigns = useCallback(async () => {
@@ -4429,6 +4457,35 @@ function AttendanceDraftTable({
     if (!res.ok) throw new Error();
   }
 
+  const statusOptions = Array.from(
+    new Set(members.map((m) => campaigns?.find((c) => c.notes === tagFn(m.name))?.status || "No draft"))
+  ).sort();
+
+  const q = query.trim().toLowerCase();
+  const filtered = members.filter((m) => {
+    if (q) {
+      const matches = m.name.toLowerCase().includes(q) || emailFor(m.name, m.email).toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+    if (statusFilter) {
+      const status = campaigns?.find((c) => c.notes === tagFn(m.name))?.status || "No draft";
+      if (status !== statusFilter) return false;
+    }
+    return true;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "name-asc") return a.name.localeCompare(b.name);
+    const sa = campaigns?.find((c) => c.notes === tagFn(a.name))?.status || "No draft";
+    const sb = campaigns?.find((c) => c.notes === tagFn(b.name))?.status || "No draft";
+    return sa.localeCompare(sb);
+  });
+
+  const activeFilterCount = [statusFilter].filter(Boolean).length;
+  function clearFilters() {
+    setStatusFilter("");
+  }
+
   return (
     <>
       <Card className="mb-6">
@@ -4457,24 +4514,87 @@ function AttendanceDraftTable({
         </div>
       </Card>
 
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <p className="text-base font-semibold text-neutral-900">{modalSubtitle} List</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setFilterOpen((o) => !o)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                <Filter className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+                Filter
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              {filterOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-10 w-72 rounded-lg border border-neutral-200 bg-white shadow-md p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 block mb-1">Draft Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm text-neutral-900"
+                    >
+                      <option value="">All statuses</option>
+                      {statusOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearFilters} className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "name-asc" | "status-asc")}
+              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700"
+            >
+              <option value="name-asc">Name (A–Z)</option>
+              <option value="status-asc">Status (A–Z)</option>
+            </select>
+            <div className="relative w-56 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" strokeWidth={1.75} />
+              <input
+                type="text"
+                placeholder="Search members..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full rounded-xl border border-neutral-200 bg-white pl-9 pr-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+            </div>
+          </div>
+        </div>
+        <table className="w-full text-sm table-fixed">
           <thead>
-            <tr className="text-left text-neutral-400 border-b border-neutral-100">
-              <th className="py-2 pr-2 font-medium w-6"></th>
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">{detailLabel}</th>
-              <th className="py-2 pr-4 font-medium">Draft</th>
+            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+              <th className="py-3 pr-2 w-6"></th>
+              <th className="py-3 pr-4 w-[30%]">Member</th>
+              <th className="py-3 pr-4 w-[26%]">{detailLabel}</th>
+              <th className="py-3 pr-4 w-[20%]">Status</th>
+              <th className="py-3 pr-4 w-[20%]">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {members.map((m, i) => {
+            {sorted.map((m, i) => {
               const canSelect = selectableNames.includes(m.name);
               const campaign = campaigns?.find((c) => c.notes === tagFn(m.name));
               const isNew = campaign?.status === "Draft";
+              const hasEmail = !!emailFor(m.name, m.email);
               return (
                 <tr key={`${m.name}-${i}`} className={`border-b border-neutral-50 last:border-0 align-top ${isNew ? "bg-amber-50/60" : ""}`}>
-                  <td className="py-2.5 pr-2">
+                  <td className="py-3 pr-2">
                     {canSelect && (
                       <input
                         type="checkbox"
@@ -4484,31 +4604,32 @@ function AttendanceDraftTable({
                       />
                     )}
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">
-                    <span className="flex items-center gap-2.5">
+                  <td className="py-3 pr-4">
+                    <span className="flex items-center gap-2.5 min-w-0">
                       <Avatar name={m.name} size="sm" />
-                      {m.name}
+                      <span className="min-w-0">
+                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
+                        <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+                      </span>
                     </span>
                   </td>
-                  <td className="py-2.5 pr-4 text-neutral-500 whitespace-nowrap">{m.detail}</td>
-                  <td className="py-2.5 pr-4 whitespace-nowrap">
-                    {!campaign ? (
+                  <td className="py-3 pr-4 text-neutral-700 truncate">{m.detail}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(campaign?.status || "No draft")}`}>
+                      {campaign?.status || "No draft"}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4">
+                    {!hasEmail ? (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                        No email
+                      </span>
+                    ) : !campaign ? (
                       <GenerateDraftButton name={m.name} generateDraft={generateDraft} onGenerated={loadCampaigns} />
                     ) : (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setOpenDraftFor(m.name)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-                        >
-                          {isNew && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
-                          {isNew ? "New draft" : campaign.status}
-                        </button>
-                        {isNew && !emailFor(m.name, m.email) && (
-                          <span className="text-xs text-amber-600" title="No email on file">
-                            no email
-                          </span>
-                        )}
-                      </div>
+                      <button onClick={() => setOpenDraftFor(m.name)} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+                        {isNew ? "View Draft" : campaign.status}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -4516,6 +4637,12 @@ function AttendanceDraftTable({
             })}
           </tbody>
         </table>
+        <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
+          <p className="text-sm text-neutral-500">
+            Showing {sorted.length} of {members.length} {pageLabel}
+            {sorted.length === 1 ? "" : "s"}
+          </p>
+        </div>
       </Card>
 
       {openDraftFor && openMember && openCampaign && (
@@ -4661,10 +4788,10 @@ function GenerateDraftButton({
         }
       }}
       disabled={generating}
-      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
     >
       <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-      {generating ? "Drafting…" : error ? "Retry" : "Generate draft"}
+      {generating ? "Drafting…" : error ? "Retry" : "Generate Draft"}
     </button>
   );
 }
