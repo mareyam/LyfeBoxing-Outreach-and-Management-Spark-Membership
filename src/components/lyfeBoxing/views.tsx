@@ -5,6 +5,9 @@ import Link from "next/link";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowRight,
+  ArrowUp,
+  BookOpen,
   Calendar as CalendarIcon,
   ChevronDown,
   ChevronLeft,
@@ -612,17 +615,20 @@ export function MembershipsView() {
         </span>
       </div>
       <Link href="/lyfe-boxing/playbook" className="group block mb-6">
-        <Card className="group-hover:border-neutral-300 transition-colors">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-semibold text-neutral-900">Playbook</p>
-              <p className="text-sm text-neutral-500 mt-1">
-                Tone, offers, prices, and FAQs that every AI-drafted message pulls from.
-              </p>
+        <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 p-5 shadow-sm flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 flex items-center justify-center">
+              <BookOpen className="h-5 w-5 text-white" strokeWidth={1.75} />
             </div>
-            <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900 whitespace-nowrap">Edit →</span>
+            <div>
+              <p className="font-semibold text-white">Playbook</p>
+              <p className="text-sm text-indigo-100 mt-0.5">Tone, offers, prices and FAQs that every AI-drafted message pulls from.</p>
+            </div>
           </div>
-        </Card>
+          <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-indigo-700 group-hover:bg-indigo-50">
+            Edit playbook <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+          </span>
+        </div>
       </Link>
       <SheetGate tab="All Memberships">{(rows) => <MembershipsByPlan rows={rows} />}</SheetGate>
     </div>
@@ -637,7 +643,45 @@ type MappedMember = {
   nextPayment: string;
   method: string;
   staff: string;
+  signed: string;
 };
+
+const PLAN_BAR_COLORS = ["bg-indigo-500", "bg-blue-500", "bg-amber-400", "bg-pink-400", "bg-emerald-400"];
+const PLAN_DOT_COLORS = ["bg-indigo-500", "bg-blue-500", "bg-amber-400", "bg-pink-400", "bg-emerald-400", "bg-neutral-300"];
+
+function PlanBreakdownChart({ planCounts, totalPlans }: { planCounts: [string, number][]; totalPlans: number }) {
+  const top5 = planCounts.slice(0, 5);
+  const otherCount = planCounts.slice(5).reduce((sum, [, count]) => sum + count, 0);
+  const segments = otherCount > 0 ? [...top5, ["Other", otherCount] as [string, number]] : top5;
+  const total = segments.reduce((sum, [, count]) => sum + count, 0) || 1;
+
+  return (
+    <Card className="mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-base font-semibold text-neutral-900">Members by plan</p>
+        <p className="text-sm text-neutral-400">Top 5 of {totalPlans}</p>
+      </div>
+      <div className="flex h-2.5 w-full rounded-full overflow-hidden bg-neutral-100">
+        {segments.map(([label, count], i) => (
+          <div
+            key={label}
+            className={i < 5 ? PLAN_BAR_COLORS[i] : "bg-neutral-300"}
+            style={{ width: `${(count / total) * 100}%` }}
+            title={`${label} · ${count}`}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4">
+        {segments.map(([label, count], i) => (
+          <span key={label} className="inline-flex items-center gap-1.5 text-xs text-neutral-600">
+            <span className={`h-2 w-2 rounded-full ${PLAN_DOT_COLORS[i] ?? "bg-neutral-300"}`} />
+            {label} · {count}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 type MembershipsSort = "name-asc" | "plan-asc" | "overdue-desc";
 
@@ -659,10 +703,23 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
     nextPayment: findField(r, "next payment"),
     method: findField(r, "method"),
     staff: findField(r, "staff"),
+    signed: findField(r, "signed"),
   }));
 
   const activeCount = mapped.filter((m) => m.expires.toLowerCase().includes("open")).length;
-  const overdueCount = mapped.filter((m) => parseMoney(m.overdue) > 0).length;
+  const overdueMembers = mapped.filter((m) => parseMoney(m.overdue) > 0);
+  const overdueCount = overdueMembers.length;
+  const overdueTotal = overdueMembers.reduce((sum, m) => sum + parseMoney(m.overdue), 0);
+
+  // eslint-disable-next-line react-hooks/purity -- "joined this month" is a point-in-time read of the clock, not cached state
+  const now = new Date();
+  const joinedThisMonth = mapped.filter((m) => {
+    const d = parseSlashDate(m.signed);
+    return d !== null && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }).length;
+
+  const planCounts = countBy(mapped, (m) => m.membership);
+  const programGroups = new Set(planCounts.map(([plan]) => plan.split(" ")[0])).size;
 
   const planOptions = Array.from(new Set(mapped.map((m) => m.membership))).sort();
   const expiresOptions = Array.from(new Set(mapped.map((m) => m.expires).filter(Boolean))).sort();
@@ -709,12 +766,45 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <Stat label="Total members" value={mapped.length} />
-        <Stat label="Plans" value={new Set(mapped.map((m) => m.membership)).size} />
-        <Stat label="Open-ended" value={activeCount} />
-        <Stat label="Overdue" value={overdueCount} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-neutral-500">Total members</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{mapped.length}</p>
+          {joinedThisMonth > 0 && (
+            <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 mt-2">
+              <ArrowUp className="h-3 w-3" strokeWidth={2.5} /> {joinedThisMonth} joined this month
+            </p>
+          )}
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-neutral-500">Active plans</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{planCounts.length}</p>
+          <p className="text-xs text-neutral-400 mt-2">across {programGroups} programs</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-neutral-500">Open-ended</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{activeCount}</p>
+          <p className="text-xs text-neutral-400 mt-2">
+            {mapped.length ? Math.round((activeCount / mapped.length) * 100) : 0}% of members
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setOverdueOnly(true);
+            setFilterOpen(false);
+          }}
+          className="text-left rounded-2xl border border-red-200 bg-white p-5 shadow-sm hover:border-red-300"
+        >
+          <p className="text-sm text-red-600">Overdue</p>
+          <p className="text-[26px] leading-none font-semibold text-red-600 mt-2">{overdueCount}</p>
+          <p className="inline-flex items-center gap-1 text-xs font-medium text-red-600 mt-2">
+            ${overdueTotal.toLocaleString()} · Review <ArrowRight className="h-3 w-3" strokeWidth={2.5} />
+          </p>
+        </button>
       </div>
+
+      <PlanBreakdownChart planCounts={planCounts} totalPlans={planCounts.length} />
+
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-base font-semibold text-neutral-900">Member List</p>
