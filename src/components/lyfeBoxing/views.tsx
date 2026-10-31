@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowDownToLine,
   ArrowRight,
   ArrowUp,
   BookOpen,
@@ -5349,8 +5350,32 @@ export function WeeklySummaryView() {
   const firstError = [memberships.state, cancelled.state, pastDue.state, payments.state].find((s) => s.status === "error");
 
   return (
-    <div className="max-w-4xl">
-      <PageHeader title="Monthly Summary" subtitle="Key numbers, plus a month-by-month recap since the first member joined." tool="Google Sheets (Summary + more)" />
+    <div className="max-w-[1600px]">
+      <div className="mb-2 flex items-center gap-1.5 text-sm text-neutral-400">
+        <Link href="/lyfe-boxing" className="hover:text-blue-600">
+          Home
+        </Link>
+        <span>›</span>
+        <span className="text-neutral-600 font-medium">Summary</span>
+      </div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Monthly Summary</h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+            Key numbers, plus a month-by-month recap since the first member joined.
+          </p>
+          <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
+            <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets (Summary + more)
+          </span>
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+        >
+          <ArrowDownToLine className="h-4 w-4" strokeWidth={1.75} />
+          Download PDF
+        </button>
+      </div>
       {loading && <LoadingCard />}
       {!loading && notConfigured && <SetupNeeded />}
       {!loading && !notConfigured && firstError && firstError.status === "error" && <SheetErrorCard message={firstError.message} />}
@@ -5412,40 +5437,60 @@ function MonthlySummaryList({
 
   return (
     <div>
-      <Card className="mb-4">
-        <p className="text-xs text-neutral-400 uppercase tracking-wide font-medium">As of today</p>
-        <div className="grid grid-cols-2 gap-4 mt-3">
-          <Stat label="Past due total" value={`$${pastDueTotal.toLocaleString()}`} />
-          <Stat label="Members past due" value={pastDueRows.length} />
+      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">As of today</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Past due total</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">${pastDueTotal.toLocaleString()}</p>
         </div>
-      </Card>
+        <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Members past due</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{pastDueRows.length}</p>
+        </div>
+      </div>
 
       {months.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No membership signup dates found yet.</Card>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {months.map((m, i) => (
-            <details key={m.monthStart.getTime()} open={i === 0} className="group rounded-2xl border border-neutral-200 bg-white overflow-hidden">
-              <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-neutral-50">
+            <details
+              key={m.monthStart.getTime()}
+              open={i < 2}
+              className="group rounded-2xl border border-blue-100 bg-white overflow-hidden"
+            >
+              <summary className="cursor-pointer select-none list-none px-5 py-4 flex items-center justify-between gap-4 hover:bg-blue-50/50">
                 <div>
-                  <p className="text-sm font-semibold text-neutral-900">{formatMonthLabel(m.monthStart)}</p>
+                  <p className="text-base font-semibold text-neutral-900">{formatMonthLabel(m.monthStart)}</p>
                   <p className="text-xs text-neutral-400 mt-0.5">
                     {m.newMembers} new · {m.cancellations} cancelled · ${m.revenue.toLocaleString()} revenue
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
+                <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 transition-transform group-open:rotate-90" />
               </summary>
-              <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  <Stat label="New members" value={m.newMembers} />
-                  <Stat label="Cancellations" value={m.cancellations} />
-                  <Stat label="Revenue" value={`$${m.revenue.toLocaleString()}`} />
-                  <Stat label="Campaigns sent" value={m.campaignsSent.length} />
+              <div className="px-5 pb-5 pt-1 border-t border-blue-50">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+                  <div className="rounded-xl bg-blue-50/60 p-4">
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">New members</p>
+                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">{m.newMembers}</p>
+                  </div>
+                  <div className="rounded-xl bg-blue-50/60 p-4">
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Cancellations</p>
+                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">{m.cancellations}</p>
+                  </div>
+                  <div className="rounded-xl bg-blue-50/60 p-4">
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Revenue</p>
+                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">${m.revenue.toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-xl bg-blue-50/60 p-4">
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Campaigns sent</p>
+                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">{m.campaignsSent.length}</p>
+                  </div>
                 </div>
                 <div className="mt-4">
-                  <p className="text-sm font-semibold text-neutral-900 mb-2">Campaigns sent</p>
+                  <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">Campaigns sent</p>
                   {m.campaignsSent.length === 0 ? (
-                    <p className="text-sm text-neutral-400">None.</p>
+                    <p className="text-sm italic text-neutral-400">None sent this month.</p>
                   ) : (
                     <ul className="text-sm text-neutral-600 space-y-1">
                       {m.campaignsSent.map((c) => (
