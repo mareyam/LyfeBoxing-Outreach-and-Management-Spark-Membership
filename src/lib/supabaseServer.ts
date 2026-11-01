@@ -21,3 +21,20 @@ export function getSupabaseClient() {
 }
 
 export const LYFE_BOXING_BUSINESS_SLUG = "lyfe-boxing";
+
+export class BusinessNotFoundError extends Error {
+  constructor(slug: string) {
+    super(`No business found for slug "${slug}".`);
+    this.name = "BusinessNotFoundError";
+  }
+}
+
+/** Resolves a business slug (e.g. "lyfe-boxing") to its business_id. Every query downstream must filter by this. */
+export async function resolveBusinessId(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  slug: string = LYFE_BOXING_BUSINESS_SLUG
+): Promise<string> {
+  const { data, error } = await supabase.from("businesses").select("id").eq("slug", slug).single();
+  if (error || !data) throw new BusinessNotFoundError(slug);
+  return data.id as string;
+}
