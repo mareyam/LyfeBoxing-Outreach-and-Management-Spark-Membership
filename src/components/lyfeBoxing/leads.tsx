@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Filter, Search, Send, Sparkles } from "lucide-react";
 import { Avatar, Card } from "@/components/ui";
 import { DraftModal, apiError, categoryColor, usePagination, usePollWhileQueued } from "@/components/lyfeBoxing/views";
+import { DueFollowups } from "@/components/lyfeBoxing/dueFollowups";
 import { decodeEmailDraft, parseSheetDate } from "@/lib/leadSequence";
 
 type SheetRow = Record<string, string> & { _row: number };
@@ -270,6 +271,8 @@ export function LeadsView() {
           Playbook
         </Link>
       </div>
+
+      <DueFollowups />
 
       {digest && (
         <Card className="mb-6">

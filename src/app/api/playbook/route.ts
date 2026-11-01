@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SheetsNotConfiguredError } from "@/lib/googleSheetsServer";
+import { SupabaseNotConfiguredError } from "@/lib/supabaseServer";
 import { readPlaybook, writePlaybook, type Playbook } from "@/lib/playbook";
 
 export async function GET() {
@@ -10,7 +10,7 @@ export async function GET() {
       trialUrlFromEnv: Boolean(process.env.TRIAL_BOOKING_URL?.trim()),
     });
   } catch (err) {
-    if (err instanceof SheetsNotConfiguredError) {
+    if (err instanceof SupabaseNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Couldn't load the playbook." }, { status: 500 });
@@ -26,11 +26,12 @@ export async function PUT(req: NextRequest) {
       prices: String(body?.prices ?? ""),
       faqs: String(body?.faqs ?? ""),
       trialLink: String(body?.trialLink ?? ""),
+      bookingLink: String(body?.bookingLink ?? ""),
     };
     await writePlaybook(playbook);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof SheetsNotConfiguredError) {
+    if (err instanceof SupabaseNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Couldn't save the playbook." }, { status: 500 });
