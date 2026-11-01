@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Check, ChevronDown, Pencil } from "lucide-react";
+import ConnectionStatus from "./ConnectionStatus";
 
 const PLACEHOLDER_COMPANIES = ["Company B", "Company C", "Company D"];
 
@@ -36,7 +37,7 @@ export default function CompanySwitcher() {
                 className={`h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`}
               />
             </span>
-            <p className="text-xs text-neutral-400 truncate">Google Sheets connected</p>
+            <ConnectionStatus />
           </div>
         </button>
         <button

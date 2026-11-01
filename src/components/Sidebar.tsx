@@ -10,6 +10,9 @@ import {
   Users,
   UserPlus,
   CreditCard,
+  Wallet,
+  Calendar,
+  BookOpen,
   UserMinus,
   Clock,
   AlertTriangle,
@@ -21,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import CompanySwitcher from "./CompanySwitcher";
+import ConnectionStatus from "./ConnectionStatus";
 
 type SidebarLinkDef = { label: string; href?: string; icon: LucideIcon };
 
@@ -35,6 +39,8 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
       { href: "/lyfe-boxing/contacts", label: "All Contacts", icon: Users },
       { href: "/lyfe-boxing/leads", label: "Leads", icon: UserPlus },
       { href: "/lyfe-boxing/memberships", label: "Memberships", icon: CreditCard },
+      { href: "/lyfe-boxing/payments", label: "Payments", icon: Wallet },
+      { href: "/lyfe-boxing/appointments", label: "Appointments", icon: Calendar },
     ],
   },
   {
@@ -53,6 +59,7 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
     links: [
       { href: "/lyfe-boxing/campaigns", label: "Campaigns", icon: Megaphone },
       { href: "/lyfe-boxing/email-templates", label: "Email Templates", icon: FileText },
+      { href: "/lyfe-boxing/examples", label: "Saved Examples", icon: BookOpen },
       // temporarily hidden — { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
       { label: "Workflows", icon: Workflow },
     ],
@@ -107,15 +114,15 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-blue-100 px-3 py-3">
-        <button className="w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-blue-50">
+        <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
           <div className="h-7 w-7 shrink-0 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center justify-center">
             LB
           </div>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-medium text-neutral-900 truncate">Lyfe Boxing</p>
-            <p className="text-xs text-neutral-400 truncate">Google Sheets connected</p>
-          </div>
-        </button>
+          <p className="text-sm font-medium text-neutral-900 truncate">Lyfe Boxing</p>
+        </div>
+        <div className="px-2 pb-1">
+          <ConnectionStatus />
+        </div>
       </div>
     </aside>
   );
