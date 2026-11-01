@@ -1,5 +1,6 @@
 import "server-only";
 import { google } from "googleapis";
+import { invalidateLyfeSheetCache } from "@/lib/sheetCache";
 
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 const CLIENT_EMAIL = process.env.GOOGLE_SHEETS_CLIENT_EMAIL;
@@ -101,6 +102,7 @@ export async function appendCampaign(input: {
       ],
     },
   });
+  invalidateLyfeSheetCache();
 }
 
 export type CampaignDraft = {
@@ -151,6 +153,7 @@ export async function markCampaignQueued(row: number, audience?: string): Promis
     spreadsheetId: SPREADSHEET_ID,
     requestBody: { valueInputOption: "RAW", data },
   });
+  invalidateLyfeSheetCache();
 }
 
 function cell(row: Record<string, string>, header: string): string {
@@ -220,6 +223,7 @@ export async function updateCampaignContent(
     spreadsheetId: SPREADSHEET_ID,
     requestBody: { valueInputOption: "RAW", data },
   });
+  invalidateLyfeSheetCache();
 }
 
 /** Thrown when a tab genuinely doesn't exist yet (vs. a general API error). */
@@ -242,29 +246,46 @@ function isMissingTabError(err: unknown, tabName: string): boolean {
  * SMS Conversations, Contacts) so this app never bakes real member data
  * into source files — it's always read live from the sheet.
  */
-export async function readTabRows(tabName: string): Promise<(Record<string, string> & { _row: number })[]> {
+export async function listSheetTitles(): Promise<string[]> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  return (meta.data.sheets ?? []).map((sheet) => sheet.properties?.title ?? "").filter(Boolean);
+}
+
+export async function readTabWithHeaders(
+  tabName: string
+): Promise<{ headers: string[]; rows: (Record<string, string> & { _row: number })[] }> {
   const sheets = getSheetsClient();
   let res;
   try {
     res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tabName}!A1:ZZ`,
+      range: `${quotedTab(tabName)}!A1:ZZ`,
     });
   } catch (err) {
     if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
     throw err;
   }
 
-  const rows = res.data.values ?? [];
-  if (rows.length === 0) return [];
-  const headers = rows[0].map((h) => (h ?? "").toString().trim());
-  return rows.slice(1).map((row, i) => {
+  const values = res.data.values ?? [];
+  if (values.length === 0) return { headers: [], rows: [] };
+  const headers = values[0].map((h) => (h ?? "").toString().trim());
+  const rows = values.slice(1).map((row, i) => {
     const obj = { _row: i + 2 } as Record<string, string> & { _row: number };
     headers.forEach((h, idx) => {
       if (h) obj[h] = (row[idx] ?? "").toString();
     });
     return obj;
   });
+  return { headers: headers.filter(Boolean), rows };
+}
+
+export async function readTabRows(tabName: string): Promise<(Record<string, string> & { _row: number })[]> {
+  const { rows } = await readTabWithHeaders(tabName);
+  return rows;
 }
 
 /** Raw rows, no header assumption — used for the Summary tab (key/value pairs, not a table). */
@@ -273,7 +294,7 @@ export async function readRawRows(tabName: string): Promise<string[][]> {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${tabName}!A1:ZZ`,
+      range: `${quotedTab(tabName)}!A1:ZZ`,
     });
     return (res.data.values ?? []).map((r) => r.map((c) => (c ?? "").toString()));
   } catch (err) {
@@ -330,6 +351,7 @@ export async function updateTabRowCells(
     spreadsheetId: SPREADSHEET_ID,
     requestBody: { valueInputOption: "RAW", data },
   });
+  invalidateLyfeSheetCache();
 }
 
 function quotedTab(tabName: string): string {
@@ -397,6 +419,7 @@ export async function appendTabRow(tabName: string, headers: string[], values: R
   });
   const updatedRange = res.data.updates?.updatedRange ?? "";
   const match = updatedRange.match(/![A-Z]+(\d+)/);
+  invalidateLyfeSheetCache();
   return match ? Number(match[1]) : NaN;
 }
 
@@ -422,6 +445,7 @@ export async function appendAppointmentRequest(input: {
     if (isMissingTabError(err, "Appointments")) throw new SheetTabMissingError("Appointments");
     throw err;
   }
+  invalidateLyfeSheetCache();
 }
 
 const EMAIL_TEMPLATES_TAB = "Email Templates";

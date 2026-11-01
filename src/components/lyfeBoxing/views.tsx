@@ -32,6 +32,22 @@ import {
 } from "lucide-react";
 import { Avatar, Badge, Card, PageHeader, Stat } from "@/components/ui";
 import SequenceBuilder, { type SequenceStep } from "@/components/lyfeBoxing/SequenceBuilder";
+import {
+  cancellationDate,
+  cancellationMonthKeys,
+  dateInMonth,
+  formatMoney,
+  formatMoneyCell,
+  isActiveTrial,
+  membershipJoinDate,
+  monthKeyFromDate,
+  monthLabel as formatMonthKey,
+  monthRevenue,
+  PAST_DUE_SOURCE_LABEL,
+  paymentAmount,
+  paymentDate,
+  trialTiming,
+} from "@/lib/lyfeMetrics";
 
 const PAGE_SIZE = 20;
 
@@ -381,9 +397,18 @@ export function DraftModal({
 
 type SheetRow = Record<string, string> & { _row: number };
 
+type SheetMeta = {
+  headers: string[];
+  missingHeaders: string[];
+  resolvedTab: string;
+  source?: string;
+  hiddenZeroBalance?: number;
+  hiddenTestContacts?: number;
+};
+
 type FetchState =
   | { status: "loading" }
-  | { status: "ok"; rows: SheetRow[] }
+  | { status: "ok"; rows: SheetRow[]; meta: SheetMeta }
   | { status: "not-configured" }
   | { status: "tab-missing"; tabName: string }
   | { status: "error"; message: string };
@@ -401,7 +426,18 @@ function useSheetTab(tab: string) {
           if (data.tabMissing) return setState({ status: "tab-missing", tabName: tab });
           return setState({ status: "error", message: data.error ?? "Failed to load." });
         }
-        setState({ status: "ok", rows: data.rows ?? [] });
+        setState({
+          status: "ok",
+          rows: data.rows ?? [],
+          meta: {
+            headers: data.headers ?? [],
+            missingHeaders: data.missingHeaders ?? [],
+            resolvedTab: data.resolvedTab ?? tab,
+            source: data.source,
+            hiddenZeroBalance: data.hiddenZeroBalance,
+            hiddenTestContacts: data.hiddenTestContacts,
+          },
+        });
       })
       .catch(() => setState({ status: "error", message: "Failed to load." }));
   }, [tab]);
@@ -583,7 +619,21 @@ function TabMissingCard({ tabName }: { tabName: string }) {
 }
 
 function LoadingCard() {
-  return <div className="h-40 rounded-2xl bg-neutral-100 animate-pulse" />;
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading sheet">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-28 rounded-2xl bg-neutral-100 animate-pulse" />
+        ))}
+      </div>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-3">
+        <div className="h-8 w-48 rounded-lg bg-neutral-100 animate-pulse" />
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-10 rounded-lg bg-neutral-100 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** Renders the right state card and calls children(rows) only once data is ok. */
@@ -592,14 +642,26 @@ function SheetGate({
   children,
 }: {
   tab: string;
-  children: (rows: SheetRow[], reload: () => void) => React.ReactNode;
+  children: (rows: SheetRow[], reload: () => void, meta: SheetMeta) => React.ReactNode;
 }) {
   const { state, reload } = useSheetTab(tab);
   if (state.status === "loading") return <LoadingCard />;
   if (state.status === "not-configured") return <SetupNeeded />;
   if (state.status === "tab-missing") return <TabMissingCard tabName={state.tabName} />;
   if (state.status === "error") return <SheetErrorCard message={state.message} />;
-  return <>{children(state.rows, reload)}</>;
+  return <>{children(state.rows, reload, state.meta)}</>;
+}
+
+function HeaderMismatch({ missing, found }: { missing: string[]; found: string[] }) {
+  if (missing.length === 0) return null;
+  return (
+    <Card className="mb-6 border-amber-200 bg-amber-50">
+      <p className="font-semibold text-neutral-900">Attendance columns don&apos;t match what this page expects</p>
+      <p className="text-sm text-neutral-600 mt-1">
+        Missing: {missing.join(", ")}. Found: {found.length ? found.join(", ") : "no headers"}.
+      </p>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -726,6 +788,7 @@ function PlanBreakdownChart({
 type MembershipsSort = "name-asc" | "plan-asc" | "overdue-desc";
 
 function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
+  const pastDue = useSheetTab("Past Due");
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [planFilter, setPlanFilter] = useState("");
@@ -748,11 +811,10 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
   }));
 
   const activeCount = mapped.filter((m) => m.expires.toLowerCase().includes("open")).length;
-  const overdueMembers = mapped.filter((m) => parseMoney(m.overdue) > 0);
-  const overdueCount = overdueMembers.length;
-  const overdueTotal = overdueMembers.reduce((sum, m) => sum + parseMoney(m.overdue), 0);
+  const pastDueRows = pastDue.state.status === "ok" ? pastDue.state.rows : [];
+  const pastDueCount = pastDueRows.length;
+  const pastDueTotal = pastDueRows.reduce((sum, row) => sum + parseMoney(findField(row, "total overdue")), 0);
 
-  // eslint-disable-next-line react-hooks/purity -- "joined this month" is a point-in-time read of the clock, not cached state
   const now = new Date();
   function isJoinedThisMonth(m: MappedMember): boolean {
     const d = parseSlashDate(m.signed);
@@ -796,7 +858,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
     }
   });
 
-  const { pageItems, page, setPage, totalPages } = usePagination(sorted);
+  const { pageItems, page, setPage, totalPages } = usePagination(sorted, 50);
 
   const activeFilterCount =
     [planFilter, expiresFilter, nextPaymentFilter, staffFilter].filter(Boolean).length +
@@ -843,20 +905,19 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
             {mapped.length ? Math.round((activeCount / mapped.length) * 100) : 0}% of members
           </p>
         </div>
-        <button
-          onClick={() => {
-            clearFilters();
-            setOverdueOnly(true);
-            setFilterOpen(false);
-          }}
+        <Link
+          href="/lyfe-boxing/past-due"
           className="text-left rounded-2xl border border-red-200 bg-white p-5 shadow-sm hover:border-red-300"
         >
-          <p className="text-sm text-red-600">Overdue</p>
-          <p className="text-[26px] leading-none font-semibold text-red-600 mt-2">{overdueCount}</p>
-          <p className="inline-flex items-center gap-1 text-xs font-medium text-red-600 mt-2">
-            ${overdueTotal.toLocaleString()} · Review <ArrowRight className="h-3 w-3" strokeWidth={2.5} />
+          <p className="text-sm text-red-600">Past due</p>
+          <p className="text-[26px] leading-none font-semibold text-red-600 mt-2">
+            {pastDue.state.status === "loading" ? "…" : pastDueCount}
           </p>
-        </button>
+          <p className="inline-flex items-center gap-1 text-xs font-medium text-red-600 mt-2">
+            {pastDue.state.status === "ok" ? formatMoney(pastDueTotal) : "—"} · {PAST_DUE_SOURCE_LABEL}{" "}
+            <ArrowRight className="h-3 w-3" strokeWidth={2.5} />
+          </p>
+        </Link>
       </div>
 
       <PlanBreakdownChart
@@ -926,7 +987,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
                         onChange={(e) => setOverdueOnly(e.target.checked)}
                         className="rounded border-neutral-300"
                       />
-                      Overdue only
+                      Roster overdue balance
                     </label>
                   </div>
                   <div>
@@ -1016,7 +1077,7 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
                   </span>
                 </td>
                 <td className="py-3 pr-4 text-neutral-700 truncate">{m.expires || "—"}</td>
-                <td className="py-3 pr-4 text-neutral-700 truncate">{m.overdue || "—"}</td>
+                <td className="py-3 pr-4 text-neutral-700 truncate">{formatMoneyCell(m.overdue)}</td>
                 <td className="py-3 pr-4 text-neutral-700 truncate">{m.nextPayment || "—"}</td>
                 <td className="py-3 pr-4 text-neutral-500 truncate">{m.staff || "—"}</td>
               </tr>
@@ -1330,12 +1391,16 @@ export function CancelledView() {
   );
 }
 
-const CANCELLED_MONTHS = ["October 2024", "September 2024", "August 2024"];
-
-/** Only October has a connected sheet right now; the rest are listed but disabled. */
-function MonthSelector() {
+function MonthSelector({
+  months,
+  selected,
+  onSelect,
+}: {
+  months: string[];
+  selected: string;
+  onSelect: (monthKey: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const selected = CANCELLED_MONTHS[0];
 
   return (
     <div className="relative shrink-0">
@@ -1344,30 +1409,25 @@ function MonthSelector() {
         className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
       >
         <CalendarIcon className="h-4 w-4 text-neutral-400" strokeWidth={1.75} />
-        {selected}
+        {formatMonthKey(selected)}
         <ChevronDown className={`h-3.5 w-3.5 text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-10 w-44 rounded-lg border border-neutral-200 bg-white shadow-md py-1">
-          {CANCELLED_MONTHS.map((month, i) =>
-            i === 0 ? (
-              <button
-                key={month}
-                onClick={() => setOpen(false)}
-                className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50"
-              >
-                {month}
-              </button>
-            ) : (
-              <div
-                key={month}
-                title="Coming soon"
-                className="px-3 py-2 text-sm text-neutral-300 cursor-not-allowed select-none"
-              >
-                {month}
-              </div>
-            )
-          )}
+        <div className="absolute right-0 top-full mt-1.5 z-10 w-52 max-h-72 overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-md py-1">
+          {months.map((month) => (
+            <button
+              key={month}
+              onClick={() => {
+                onSelect(month);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 text-sm ${
+                month === selected ? "font-medium text-blue-700 bg-blue-50" : "text-neutral-700 hover:bg-neutral-50"
+              }`}
+            >
+              {formatMonthKey(month)}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -1387,6 +1447,8 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
   const [sortBy, setSortBy] = useState<CancelledSort>("cancelled-desc");
+  const [now] = useState(() => new Date());
+  const [monthKey, setMonthKey] = useState(() => monthKeyFromDate(new Date()));
   const emailFor = useContactEmails();
 
   const loadCampaigns = useCallback(async () => {
@@ -1404,23 +1466,27 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
     loadCampaigns();
   }, [loadCampaigns]);
 
-  const mapped = rows.map((r) => ({
+  const allMapped = rows.map((r) => ({
     name: findField(r, "name"),
     email: findField(r, "email"),
     membership: findField(r, "membership"),
     signedDate: findField(r, "signed"),
+    cancelledOn: cancellationDate(r),
     cancelledDate: findField(r, "cancelled date", "cancelled"),
     quitCategory: findField(r, "quit category", "category"),
     reason: findField(r, "reason"),
   }));
+  const monthOptions = cancellationMonthKeys(
+    allMapped.map((c) => c.cancelledOn),
+    now
+  );
+  const mapped = allMapped.filter((c) => dateInMonth(c.cancelledOn, monthKey));
 
-  // eslint-disable-next-line react-hooks/purity -- intentionally evaluated fresh each render: a point-in-time "days since cancellation" check, not cached state
-  const winbackNow = Date.now();
-  function isWinbackEligible(cancelledDate: string): boolean {
-    const d = parseSlashDate(cancelledDate);
-    return d !== null && winbackNow - d.getTime() >= 14 * 86_400_000;
+  const winbackNow = now.getTime();
+  function isWinbackEligible(cancelledOn: Date | null): boolean {
+    return cancelledOn !== null && winbackNow - cancelledOn.getTime() >= 14 * 86_400_000;
   }
-  const winbackEligible = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).length;
+  const winbackEligible = mapped.filter((c) => isWinbackEligible(c.cancelledOn)).length;
 
   const membershipOptions = Array.from(new Set(mapped.map((c) => c.membership).filter(Boolean))).sort();
   const categoryOptions = Array.from(new Set(mapped.map((c) => c.quitCategory || "Not Assigned"))).sort();
@@ -1445,9 +1511,9 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const sorted = [...filtered].sort((a, b) => {
     switch (sortBy) {
       case "cancelled-desc":
-        return (parseSlashDate(b.cancelledDate)?.getTime() ?? 0) - (parseSlashDate(a.cancelledDate)?.getTime() ?? 0);
+        return (b.cancelledOn?.getTime() ?? 0) - (a.cancelledOn?.getTime() ?? 0);
       case "cancelled-asc":
-        return (parseSlashDate(a.cancelledDate)?.getTime() ?? 0) - (parseSlashDate(b.cancelledDate)?.getTime() ?? 0);
+        return (a.cancelledOn?.getTime() ?? 0) - (b.cancelledOn?.getTime() ?? 0);
       case "signed-desc":
         return (parseSlashDate(b.signedDate)?.getTime() ?? 0) - (parseSlashDate(a.signedDate)?.getTime() ?? 0);
       case "signed-asc":
@@ -1465,6 +1531,11 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
 
   const { pageItems, page, setPage, totalPages } = usePagination(sorted);
 
+  function selectMonth(next: string) {
+    setMonthKey(next);
+    setPage(1);
+  }
+
   const activeFilterCount = [membershipFilter, categoryFilter, reasonFilter].filter(Boolean).length;
   function clearFilters() {
     setMembershipFilter("");
@@ -1476,7 +1547,7 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === winbackTag(openDraftFor)) : undefined;
   const openEmail = openContact ? emailFor(openContact.name, openContact.email) : "";
 
-  const eligibleNames = mapped.filter((c) => isWinbackEligible(c.cancelledDate)).map((c) => c.name);
+  const eligibleNames = mapped.filter((c) => isWinbackEligible(c.cancelledOn)).map((c) => c.name);
   const winbackQueued = !!campaigns?.some((c) => c.notes.startsWith("winback:") && c.status === "Queued");
   usePollWhileQueued(winbackQueued, loadCampaigns);
   const missingDraftCount = campaigns
@@ -1511,13 +1582,17 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
       </div>
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Cancellations (October)</h1>
-          <p className="text-base text-neutral-500 mt-2 max-w-2xl">Analyze reasons and categories for membership cancellations.</p>
+          <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">
+            Cancellations ({formatMonthKey(monthKey)})
+          </h1>
+          <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+            Counts and Generate all include only cancellations in {formatMonthKey(monthKey)}.
+          </p>
           <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
             <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
           </span>
         </div>
-        <MonthSelector />
+        <MonthSelector months={monthOptions} selected={monthKey} onSelect={selectMonth} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
@@ -1733,8 +1808,8 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
           </span>
           <p className="text-lg font-semibold mt-3">Win-back Members</p>
           <p className="text-sm text-blue-100 mt-1">
-            {winbackEligible} member{winbackEligible === 1 ? "" : "s"} cancelled 14+ days ago. Generate personalized re-engagement
-            drafts to send them automatically.
+            {winbackEligible} member{winbackEligible === 1 ? "" : "s"} in {formatMonthKey(monthKey)} cancelled 14+ days ago.
+            Generate all only covers this month.
           </p>
           <label className="text-[11px] font-semibold tracking-wide text-blue-200 block mt-4 mb-1.5">DRAFT GOAL</label>
           <textarea
@@ -2039,19 +2114,22 @@ export function PastDueView() {
       </div>
       <div className="mb-6">
         <h1 className="text-[28px] leading-tight font-semibold text-neutral-900 tracking-tight">Past Due</h1>
-        <p className="text-base text-neutral-500 mt-2 max-w-2xl">Members behind on payment, with the draft collections email for each.</p>
+        <p className="text-base text-neutral-500 mt-2 max-w-2xl">
+          Members with a balance on the {PAST_DUE_SOURCE_LABEL}. $0 rows and excluded test contacts are left out of the
+          count, the total, and Generate all. Nothing is deleted from the sheet.
+        </p>
         <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium mt-3">
           <CalendarIcon className="h-3.5 w-3.5" strokeWidth={1.75} /> Google Sheets Source
         </span>
       </div>
-      <SheetGate tab="Past Due">{(rows) => <PastDueList rows={rows} />}</SheetGate>
+      <SheetGate tab="Past Due">{(rows, _reload, meta) => <PastDueList rows={rows} meta={meta} />}</SheetGate>
     </div>
   );
 }
 
 type PastDueSort = "overdue-desc" | "overdue-asc" | "name-asc" | "last-attempt-desc";
 
-function PastDueList({ rows }: { rows: SheetRow[] }) {
+function PastDueList({ rows, meta }: { rows: SheetRow[]; meta: SheetMeta }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [members, setMembers] = useState<PastDueMember[]>(() => rows.map(rowToPastDueMember));
@@ -2181,6 +2259,11 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
           </div>
           <p className="text-sm text-neutral-500">Members past due</p>
           <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{members.length}</p>
+          <p className="text-xs text-neutral-400 mt-2">
+            {PAST_DUE_SOURCE_LABEL}
+            {meta.hiddenZeroBalance ? ` · ${meta.hiddenZeroBalance} at $0 hidden` : ""}
+            {meta.hiddenTestContacts ? ` · ${meta.hiddenTestContacts} test contact${meta.hiddenTestContacts === 1 ? "" : "s"} hidden` : ""}
+          </p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -2192,7 +2275,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
             </span>
           </div>
           <p className="text-sm text-neutral-500">Total overdue amount</p>
-          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">${totalOwed.toLocaleString()}</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{formatMoney(totalOwed)}</p>
         </div>
 
         <div className="rounded-2xl bg-indigo-700 text-white p-5 shadow-sm">
@@ -2345,7 +2428,7 @@ function PastDueList({ rows }: { rows: SheetRow[] }) {
                     </span>
                   </td>
                   <td className="py-3 pr-4 text-neutral-700 truncate">
-                    {m.totalOverdue ? `$${parseMoney(m.totalOverdue).toLocaleString()}` : "—"}
+                    {formatMoneyCell(m.totalOverdue)}
                   </td>
                   <td className="py-3 pr-4 text-neutral-500 truncate">{m.lastAttempt || "—"}</td>
                   <td className="py-3 pr-4">
@@ -2672,14 +2755,14 @@ function PaymentsByMonth({ rows }: { rows: SheetRow[] }) {
             <div>
               <p className="text-sm font-semibold text-neutral-900">{m.label}</p>
               <p className="text-xs text-neutral-400 mt-0.5">
-                {m.rows.length} payment{m.rows.length === 1 ? "" : "s"} · ${m.total.toLocaleString()} collected
+                {m.rows.length} payment{m.rows.length === 1 ? "" : "s"} · {m.rows.length === 0 ? "No data" : `${formatMoney(m.total)} collected`}
               </p>
             </div>
             <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0 transition-transform group-open:rotate-90" />
           </summary>
           <div className="px-5 pb-5 pt-1 border-t border-neutral-100">
             {m.rows.length === 0 ? (
-              <p className="text-sm text-neutral-400 py-4">No payments this month.</p>
+              <p className="text-sm text-neutral-400 py-4">No data — this month has no rows on the Payments tab.</p>
             ) : (
               <MonthPaymentsTable rows={m.rows} />
             )}
@@ -2720,7 +2803,7 @@ function MonthPaymentsTable({
               <td className="py-2.5 pr-4 whitespace-nowrap">
                 <Badge>{p.status || "—"}</Badge>
               </td>
-              <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{p.amountPaid || "—"}</td>
+              <td className="py-2.5 pr-4 text-neutral-900 font-medium whitespace-nowrap">{formatMoneyCell(p.amountPaid)}</td>
             </tr>
           ))}
         </tbody>
@@ -4227,6 +4310,8 @@ function TrialTable({
   const [filterOpen, setFilterOpen] = useState(false);
   const [membershipFilter, setMembershipFilter] = useState("");
   const [sortBy, setSortBy] = useState<TrialSort>("name-asc");
+  const [showExpired, setShowExpired] = useState(false);
+  const [now] = useState(() => new Date());
   const emailFor = useContactEmails();
 
   const loadCampaigns = useCallback(async () => {
@@ -4244,9 +4329,12 @@ function TrialTable({
     loadCampaigns();
   }, [loadCampaigns]);
 
+  const activeMembers = trialMembers.filter((m) => isActiveTrial(m.expires, now));
+  const expiredMembers = trialMembers.filter((m) => trialTiming(m.expires, now) === "expired");
+  const visibleMembers = showExpired ? trialMembers : activeMembers;
   const missingDraftCount = campaigns
-    ? trialMembers.filter((m) => !campaigns.find((c) => c.notes === trialTag(m.name))).length
-    : trialMembers.length;
+    ? activeMembers.filter((m) => !campaigns.find((c) => c.notes === trialTag(m.name))).length
+    : activeMembers.length;
   const trialQueued = !!campaigns?.some((c) => c.notes.startsWith("trial:") && !c.notes.startsWith("trial-sms:") && c.status === "Queued");
   usePollWhileQueued(trialQueued, loadCampaigns);
 
@@ -4254,7 +4342,7 @@ function TrialTable({
   const openCampaign = openDraftFor ? campaigns?.find((c) => c.notes === trialTag(openDraftFor)) : undefined;
   const openEmail = openMember ? emailFor(openMember.name, openMember.email) : "";
 
-  const selectableNames = trialMembers
+  const selectableNames = activeMembers
     .filter((m) => {
       const camp = campaigns?.find((c) => c.notes === trialTag(m.name));
       return camp && (camp.status === "Draft" || camp.status === "Error") && emailFor(m.name, m.email);
@@ -4270,28 +4358,21 @@ function TrialTable({
     });
   }
 
-  if (trialMembers.length === 0) {
-    return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
-  }
-
   function daysUntil(dateStr: string): number | null {
     const d = parseSlashDate(dateStr);
     if (!d) return null;
-    return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  const expiringSoonCount = trialMembers.filter((m) => {
-    const d = daysUntil(m.expires);
-    return d !== null && d <= 2;
-  }).length;
+  const expiringSoonCount = trialMembers.filter((m) => trialTiming(m.expires, now) === "expiring").length;
   const draftsGeneratedCount = campaigns
-    ? trialMembers.filter((m) => campaigns.find((c) => c.notes === trialTag(m.name))).length
+    ? activeMembers.filter((m) => campaigns.find((c) => c.notes === trialTag(m.name))).length
     : 0;
 
-  const membershipOptions = Array.from(new Set(trialMembers.map((m) => m.membership))).sort();
+  const membershipOptions = Array.from(new Set(visibleMembers.map((m) => m.membership))).sort();
 
   const q = query.trim().toLowerCase();
-  const filtered = trialMembers.filter((m) => {
+  const filtered = visibleMembers.filter((m) => {
     if (q) {
       const matches = m.name.toLowerCase().includes(q) || emailFor(m.name, m.email).toLowerCase().includes(q);
       if (!matches) return false;
@@ -4321,6 +4402,10 @@ function TrialTable({
 
   const { pageItems, page, setPage, totalPages } = usePagination(sorted);
 
+  if (trialMembers.length === 0) {
+    return <Card className="text-center py-10 text-sm text-neutral-500">No trial members right now.</Card>;
+  }
+
   const activeFilterCount = [membershipFilter].filter(Boolean).length;
   function clearFilters() {
     setMembershipFilter("");
@@ -4338,8 +4423,17 @@ function TrialTable({
               Active Trials
             </span>
           </div>
-          <p className="text-sm text-neutral-500">Total Trial Members</p>
-          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{trialMembers.length} Members</p>
+          <p className="text-sm text-neutral-500">Active trials</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{activeMembers.length} Members</p>
+          {expiredMembers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowExpired((value) => !value)}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-800 mt-2"
+            >
+              {expiredMembers.length} already expired · {showExpired ? "Hide" : "Show"}
+            </button>
+          )}
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -4362,7 +4456,7 @@ function TrialTable({
               Expiring Soon
             </span>
           </div>
-          <p className="text-sm text-neutral-500">Ending in 48h</p>
+          <p className="text-sm text-neutral-500">End date within the next 48h</p>
           <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{expiringSoonCount} Members</p>
         </div>
       </div>
@@ -4478,15 +4572,17 @@ function TrialTable({
                     <span className="block text-xs text-neutral-400 truncate">{subtitle}</span>
                   </td>
                   <td className="py-3 pr-4">
-                    {daysLeft === null ? (
-                      <span className="text-neutral-400">—</span>
-                    ) : daysLeft <= 0 ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600">
-                        Ending today
+                    {trialTiming(m.expires, now) === "expired" ? (
+                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500">
+                        Expired
                       </span>
-                    ) : daysLeft <= 2 ? (
+                    ) : trialTiming(m.expires, now) === "expiring" ? (
                       <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        {daysLeft} day{daysLeft === 1 ? "" : "s"}
+                        Within 48h
+                      </span>
+                    ) : trialTiming(m.expires, now) === "undated" ? (
+                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+                        Open ended
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
@@ -4495,7 +4591,9 @@ function TrialTable({
                     )}
                   </td>
                   <td className="py-3 pr-4">
-                    {hasEmail ? (
+                    {trialTiming(m.expires, now) === "expired" ? (
+                      <span className="text-xs text-neutral-400">Expired</span>
+                    ) : hasEmail ? (
                       <TrialDraftCell
                         name={m.name}
                         hasEmail={hasEmail}
@@ -4544,8 +4642,8 @@ function TrialTable({
         </span>
         <p className="text-lg font-semibold mt-3">Upgrade Campaigns</p>
         <p className="text-sm text-indigo-100 mt-1">
-          Personalize the upgrade offer for {trialMembers.length} trial member{trialMembers.length === 1 ? "" : "s"}. Mention special
-          discounts or new programs to increase conversion.
+          Personalize the upgrade offer for {activeMembers.length} active trial member{activeMembers.length === 1 ? "" : "s"}.
+          Generate all skips trials whose end date has already passed.
         </p>
         <label className="text-[11px] font-semibold tracking-wide text-indigo-200 block mt-4 mb-1.5">YOUR UPGRADE OFFER</label>
         <textarea
@@ -4570,7 +4668,7 @@ function TrialTable({
           </div>
         )}
         <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
-          <GenerateAllTrialButton members={trialMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
+          <GenerateAllTrialButton members={activeMembers} missingCount={missingDraftCount} brief={brief} onDone={loadCampaigns} />
         </div>
       </div>
       </div>
@@ -4795,32 +4893,43 @@ export function AtRiskView() {
         </span>
       </div>
       <SheetGate tab="Attendance">
-        {(rows) => {
+        {(rows, _reload, meta) => {
+          const warning = <HeaderMismatch missing={meta.missingHeaders} found={meta.headers} />;
           const members = rows
             .map((r) => ({
-              name: findField(r, "name"),
+              name: findField(r, "name", "member name", "member"),
               email: findField(r, "email"),
-              lastAttended: findField(r, "last attended"),
+              lastAttended: findField(r, "last attended", "last visit", "last class"),
             }))
             .filter((m) => m.name)
             .map((m) => ({ ...m, daysSince: daysSince(m.lastAttended) }))
             .filter((m) => m.daysSince !== null && m.daysSince >= 10);
 
           if (members.length === 0) {
-            return <Card className="text-center py-10 text-sm text-neutral-500">No one is at risk right now.</Card>;
+            return (
+              <>
+                {warning}
+                <Card className="text-center py-10 text-sm text-neutral-500">
+                  No one is at risk right now. Reading {meta.resolvedTab}.
+                </Card>
+              </>
+            );
           }
 
           return (
-            <AttendanceDraftTable
-              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.daysSince} days since last class` }))}
-              detailLabel="Last attended"
-              tagFn={atRiskTag}
-              contextHint={AT_RISK_CONTEXT_HINT}
-              briefPlaceholder="e.g. invite them back with a free class"
-              modalTitlePrefix="Check-in email for"
-              modalSubtitle="At Risk"
-              pageLabel="member"
-            />
+            <>
+              {warning}
+              <AttendanceDraftTable
+                members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.daysSince} days since last class` }))}
+                detailLabel="Last attended"
+                tagFn={atRiskTag}
+                contextHint={AT_RISK_CONTEXT_HINT}
+                briefPlaceholder="e.g. invite them back with a free class"
+                modalTitlePrefix="Check-in email for"
+                modalSubtitle="At Risk"
+                pageLabel="member"
+              />
+            </>
           );
         }}
       </SheetGate>
@@ -4848,13 +4957,14 @@ export function UpgradeCandidatesView() {
         </span>
       </div>
       <SheetGate tab="Attendance">
-        {(rows) => {
+        {(rows, _reload, meta) => {
+          const warning = <HeaderMismatch missing={meta.missingHeaders} found={meta.headers} />;
           const members = rows
             .map((r) => ({
-              name: findField(r, "name"),
+              name: findField(r, "name", "member name", "member"),
               email: findField(r, "email"),
-              membership: findField(r, "membership"),
-              classes30d: Number(findField(r, "classes last 30 days", "classes")) || 0,
+              membership: findField(r, "membership", "membership plan", "plan"),
+              classes30d: Number(findField(r, "classes last 30 days", "classes last 30", "visits last 30 days", "classes")) || 0,
             }))
             .filter((m) => m.name)
             .filter(
@@ -4864,20 +4974,30 @@ export function UpgradeCandidatesView() {
             );
 
           if (members.length === 0) {
-            return <Card className="text-center py-10 text-sm text-neutral-500">No upgrade candidates right now.</Card>;
+            return (
+              <>
+                {warning}
+                <Card className="text-center py-10 text-sm text-neutral-500">
+                  No upgrade candidates right now. Reading {meta.resolvedTab}.
+                </Card>
+              </>
+            );
           }
 
           return (
-            <AttendanceDraftTable
-              members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.classes30d} classes in 30 days (${m.membership})` }))}
-              detailLabel="Activity"
-              tagFn={upgradeTag}
-              contextHint={UPGRADE_CONTEXT_HINT}
-              briefPlaceholder="e.g. offer a discount on their first month on Unlimited"
-              modalTitlePrefix="Upgrade email for"
-              modalSubtitle="Upgrade Candidates"
-              pageLabel="candidate"
-            />
+            <>
+              {warning}
+              <AttendanceDraftTable
+                members={members.map((m) => ({ name: m.name, email: m.email, detail: `${m.classes30d} classes in 30 days (${m.membership})` }))}
+                detailLabel="Activity"
+                tagFn={upgradeTag}
+                contextHint={UPGRADE_CONTEXT_HINT}
+                briefPlaceholder="e.g. offer a discount on their first month on Unlimited"
+                modalTitlePrefix="Upgrade email for"
+                modalSubtitle="Upgrade Candidates"
+                pageLabel="candidate"
+              />
+            </>
           );
         }}
       </SheetGate>
@@ -5320,11 +5440,11 @@ function formatMonthLabel(monthStart: Date): string {
   return `1–${daysInMonth} ${monthYear}`;
 }
 
-/** Oldest "Signed" date across all memberships — the real start of the gym's data, not an arbitrary lookback window. */
-function oldestSignedDate(membershipRows: SheetRow[]): Date | null {
+/** Oldest join date (Signed, or Starts when Signed is blank) — where the month list begins. */
+function oldestJoinDate(membershipRows: SheetRow[]): Date | null {
   let oldest: Date | null = null;
   for (const m of membershipRows) {
-    const d = parseSlashDate(findField(m, "signed"));
+    const d = membershipJoinDate(m);
     if (d && (!oldest || d.getTime() < oldest.getTime())) oldest = d;
   }
   return oldest;
@@ -5400,7 +5520,7 @@ function MonthlySummaryList({
   const pastDueTotal = useMemo(() => pastDueRows.reduce((sum, p) => sum + parseMoney(findField(p, "total overdue")), 0), [pastDueRows]);
 
   const months = useMemo(() => {
-    const start = oldestSignedDate(membershipRows);
+    const start = oldestJoinDate(membershipRows);
     if (!start) return [];
 
     const list = [];
@@ -5409,15 +5529,16 @@ function MonthlySummaryList({
 
     while (cursor.getTime() <= last.getTime()) {
       const monthStart = new Date(cursor);
-      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-      const inRange = (d: Date | null) => d !== null && d.getTime() >= monthStart.getTime() && d.getTime() < monthEnd.getTime();
+      const key = monthKeyFromDate(monthStart);
 
-      const newMembers = membershipRows.filter((m) => inRange(parseSlashDate(findField(m, "signed")))).length;
-      const cancellations = cancelledRows.filter((c) => inRange(parseSlashDate(findField(c, "cancelled date", "cancelled")))).length;
-      const revenue = paymentRows
-        .filter((p) => inRange(parseSlashDate(findField(p, "date"))))
-        .reduce((sum, p) => sum + parseMoney(findField(p, "amount paid", "amount")), 0);
-      const campaignsSent = campaigns.filter((c) => (c.status === "Sent" || c.status === "Queued") && inRange(parseSlashDate(c.sentAt)));
+      const newMembers = membershipRows.filter((m) => dateInMonth(membershipJoinDate(m), key)).length;
+      const cancellations = cancelledRows.filter((c) => dateInMonth(cancellationDate(c), key)).length;
+      const amounts = paymentRows.filter((p) => dateInMonth(paymentDate(p), key)).map((p) => paymentAmount(p));
+      const revenue = monthRevenue(amounts);
+      const campaignsSent = campaigns.filter((c) => {
+        const sent = parseSlashDate(c.sentAt);
+        return (c.status === "Sent" || c.status === "Queued") && dateInMonth(sent, key);
+      });
 
       list.push({ monthStart, newMembers, cancellations, revenue, campaignsSent });
       cursor.setMonth(cursor.getMonth() + 1);
@@ -5431,14 +5552,20 @@ function MonthlySummaryList({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Past due total</p>
-          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">${pastDueTotal.toLocaleString()}</p>
+          <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{formatMoney(pastDueTotal)}</p>
+          <p className="text-xs text-neutral-400 mt-2">{PAST_DUE_SOURCE_LABEL}</p>
         </div>
         <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Members past due</p>
           <p className="text-[26px] leading-none font-semibold text-neutral-900 mt-2">{pastDueRows.length}</p>
+          <p className="text-xs text-neutral-400 mt-2">$0 balances excluded</p>
         </div>
       </div>
 
+      <p className="text-sm text-neutral-500 mb-3">
+        New members use the membership Signed date, or Starts when Signed is blank. Cancellations use Cancelled Date.
+        A month with no rows on the Payments tab shows No data.
+      </p>
       {months.length === 0 ? (
         <Card className="text-center py-10 text-sm text-neutral-500">No membership signup dates found yet.</Card>
       ) : (
@@ -5453,7 +5580,7 @@ function MonthlySummaryList({
                 <div>
                   <p className="text-base font-semibold text-neutral-900">{formatMonthLabel(m.monthStart)}</p>
                   <p className="text-xs text-neutral-400 mt-0.5">
-                    {m.newMembers} new · {m.cancellations} cancelled · ${m.revenue.toLocaleString()} revenue
+                    {m.newMembers} new · {m.cancellations} cancelled · {m.revenue === null ? "No data" : formatMoney(m.revenue)} revenue
                   </p>
                 </div>
                 <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 transition-transform group-open:rotate-90" />
@@ -5470,7 +5597,7 @@ function MonthlySummaryList({
                   </div>
                   <div className="rounded-xl bg-blue-50/60 p-4">
                     <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Revenue</p>
-                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">${m.revenue.toLocaleString()}</p>
+                    <p className="text-xl font-semibold text-neutral-900 mt-1.5">{m.revenue === null ? "No data" : formatMoney(m.revenue)}</p>
                   </div>
                   <div className="rounded-xl bg-blue-50/60 p-4">
                     <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Campaigns sent</p>
