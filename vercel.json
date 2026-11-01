@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/lead-sequence",
+      "path": "/api/cron/lead-followups",
       "schedule": "0 13 * * *"
     }
   ]

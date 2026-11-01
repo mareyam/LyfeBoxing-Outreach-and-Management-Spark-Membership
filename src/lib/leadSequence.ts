@@ -115,3 +115,51 @@ export function draftsDiffer(original: string, finalText: string): boolean {
   const right = finalText.replace(/\s+/g, " ").trim();
   return left.length > 0 && left !== right;
 }
+
+/** What the Supabase-backed cron needs to know about a lead to decide its next action. */
+export type LeadFollowupInput = {
+  stage: string;
+  status: string;
+  nextFollowupDate: string | null; // ISO date (date column), e.g. "2026-11-05"
+  sequenceStep: string;
+  emailUnsubscribed: boolean;
+  hasBookedAppointment: boolean;
+  hasPastAppointmentUnattended: boolean; // an appointment whose scheduled_at has passed and is not "attended"
+};
+
+export type LeadFollowupDecision =
+  | { action: "none"; reason: string }
+  | { action: "skip"; reason: string }
+  | { action: "needs_reply" }
+  | { action: "no_show_followup" }
+  | { action: "sequence_step"; step: number };
+
+/** Pure decision logic for the daily lead-followup cron. Never sends anything by itself. */
+export function decideLeadFollowup(input: LeadFollowupInput, today: Date): LeadFollowupDecision {
+  if (input.emailUnsubscribed) return { action: "skip", reason: "unsubscribed" };
+  if (normStage(input.stage) === "replied") return { action: "needs_reply" };
+  if (normStage(input.stage) === "joined" || normStage(input.status) === "joined") {
+    return { action: "skip", reason: "joined" };
+  }
+  if (input.hasBookedAppointment) return { action: "skip", reason: "appointment booked" };
+
+  if (input.hasPastAppointmentUnattended) return { action: "no_show_followup" };
+
+  const step = normalizeStep(input.sequenceStep);
+  if (step > 4) return { action: "skip", reason: "sequence finished" };
+  if (!isSequenceStage(input.stage)) return { action: "skip", reason: `stage "${input.stage}" is not sequenced` };
+
+  const due = input.nextFollowupDate ? parseSheetDate(input.nextFollowupDate) : null;
+  if (!due) return { action: "none", reason: "no next follow-up date set" };
+  if (due.getTime() > today.getTime()) return { action: "none", reason: "not due yet" };
+  return { action: "sequence_step", step };
+}
+
+/** An appointment is a no-show once its scheduled time has passed and it was never marked attended/cancelled. */
+export function isAppointmentNoShow(input: { scheduledAt: string | Date; status: string; now: Date }): boolean {
+  const status = input.status.trim().toLowerCase();
+  if (status === "attended" || status === "cancelled" || status === "no_show") return false;
+  const scheduled = input.scheduledAt instanceof Date ? input.scheduledAt : new Date(input.scheduledAt);
+  if (Number.isNaN(scheduled.getTime())) return false;
+  return scheduled.getTime() < input.now.getTime();
+}

@@ -10,9 +10,10 @@ type PlaybookForm = {
   prices: string;
   faqs: string;
   trialLink: string;
+  bookingLink: string;
 };
 
-const EMPTY: PlaybookForm = { tone: "", offers: "", prices: "", faqs: "", trialLink: "" };
+const EMPTY: PlaybookForm = { tone: "", offers: "", prices: "", faqs: "", trialLink: "", bookingLink: "" };
 
 export function PlaybookView() {
   const [form, setForm] = useState<PlaybookForm>(EMPTY);
@@ -63,7 +64,7 @@ export function PlaybookView() {
       <PageHeader
         title="Playbook"
         subtitle="Tone, offers, prices, FAQs, and the trial link. Every AI draft reads this, plus the five most recent edits."
-        tool="Google Sheets (Playbook)"
+        tool="Supabase (playbook)"
       />
       {loading ? (
         <div className="h-40 rounded-2xl bg-neutral-100 animate-pulse" />
@@ -90,6 +91,21 @@ export function PlaybookView() {
                   TRIAL_BOOKING_URL is set on the server, so drafts use that link instead of the one saved here.
                 </p>
               )}
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 block mb-1" htmlFor="booking-link">
+                Booking link (CTA in every draft)
+              </label>
+              <input
+                id="booking-link"
+                value={form.bookingLink}
+                onChange={(e) => update("bookingLink", e.target.value)}
+                placeholder="https://"
+                className="w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-xs text-neutral-400 mt-1">
+                Included as a clear call-to-action in every lead follow-up draft the cron job generates.
+              </p>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
