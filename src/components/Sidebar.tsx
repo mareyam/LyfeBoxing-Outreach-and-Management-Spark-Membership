@@ -43,17 +43,18 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
       { href: "/lyfe-boxing/appointments", label: "Appointments", icon: Calendar },
     ],
   },
-  {
-    heading: "Retention & Growth",
-    links: [
-      { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back", icon: UserMinus },
-      { href: "/lyfe-boxing/past-due", label: "Past Due", icon: Clock },
-      { href: "/lyfe-boxing/at-risk", label: "At Risk", icon: AlertTriangle },
-      { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion", icon: TrendingUp },
-      { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates", icon: TrendingUp },
-      { label: "Inactive Members", icon: UserX },
-    ],
-  },
+  // temporarily hidden
+  // {
+  //   heading: "Retention & Growth",
+  //   links: [
+  //     { href: "/lyfe-boxing/cancelled", label: "Cancelled / Win-back", icon: UserMinus },
+  //     { href: "/lyfe-boxing/past-due", label: "Past Due", icon: Clock },
+  //     { href: "/lyfe-boxing/at-risk", label: "At Risk", icon: AlertTriangle },
+  //     { href: "/lyfe-boxing/trial-conversion", label: "Trial Conversion", icon: TrendingUp },
+  //     { href: "/lyfe-boxing/upgrade-candidates", label: "Upgrade Candidates", icon: TrendingUp },
+  //     { label: "Inactive Members", icon: UserX },
+  //   ],
+  // },
   {
     heading: "Marketing",
     links: [
