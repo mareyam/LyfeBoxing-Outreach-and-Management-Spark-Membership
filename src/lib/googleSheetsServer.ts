@@ -1,0 +1,633 @@
+import "server-only";
+import { google } from "googleapis";
+import { invalidateLyfeSheetCache } from "@/lib/sheetCache";
+
+const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+const CLIENT_EMAIL = process.env.GOOGLE_SHEETS_CLIENT_EMAIL;
+const PRIVATE_KEY = process.env.GOOGLE_SHEETS_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+export class SheetsNotConfiguredError extends Error {
+  constructor() {
+    super(
+      "Google Sheets credentials aren't configured. Set GOOGLE_SHEETS_SPREADSHEET_ID, GOOGLE_SHEETS_CLIENT_EMAIL, and GOOGLE_SHEETS_PRIVATE_KEY."
+    );
+    this.name = "SheetsNotConfiguredError";
+  }
+}
+
+function getSheetsClient() {
+  if (!SPREADSHEET_ID || !CLIENT_EMAIL || !PRIVATE_KEY) {
+    throw new SheetsNotConfiguredError();
+  }
+  const auth = new google.auth.JWT({
+    email: CLIENT_EMAIL,
+    key: PRIVATE_KEY,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  return google.sheets({ version: "v4", auth });
+}
+
+export type CampaignRow = {
+  row: number;
+  campaignName: string;
+  channel: string;
+  audience: string;
+  subject: string;
+  messageBody: string;
+  send: boolean;
+  status: string;
+  recipients: string;
+  sentAt: string;
+  notes: string;
+  smsBody: string;
+};
+
+const CAMPAIGNS_RANGE = "Campaigns!A2:K1000";
+
+export async function listCampaigns(): Promise<CampaignRow[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: CAMPAIGNS_RANGE,
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((r, i) => ({
+      row: i + 2,
+      campaignName: r[0] ?? "",
+      channel: r[1] ?? "",
+      audience: r[2] ?? "",
+      subject: r[3] ?? "",
+      messageBody: r[4] ?? "",
+      send: (r[5] ?? "").toString().toUpperCase() === "TRUE",
+      status: r[6] ?? "Draft",
+      recipients: r[7] ?? "",
+      sentAt: r[8] ?? "",
+      notes: r[9] ?? "",
+      smsBody: r[10] ?? "",
+    }))
+    .filter((c) => c.campaignName.trim() !== "");
+}
+
+export async function appendCampaign(input: {
+  campaignName: string;
+  channel: string;
+  audience: string;
+  subject: string;
+  messageBody: string;
+  notes?: string;
+  smsBody?: string;
+}): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "Campaigns!A:K",
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [
+        [
+          input.campaignName,
+          input.channel,
+          input.audience,
+          input.subject,
+          input.messageBody,
+          "FALSE",
+          "Draft",
+          "",
+          "",
+          input.notes ?? "",
+          input.smsBody ?? "",
+        ],
+      ],
+    },
+  });
+  invalidateLyfeSheetCache();
+}
+
+export type CampaignDraft = {
+  campaignName: string;
+  audience: string;
+  subject: string;
+  messageBody: string;
+  status: string;
+  notes: string;
+  channel: string;
+  smsBody: string;
+};
+
+/** Reads one Campaigns row (columns A–K). Does not change column order. */
+export async function getCampaignDraft(row: number): Promise<CampaignDraft> {
+  const sheets = getSheetsClient();
+  const current = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Campaigns!A${row}:K${row}`,
+  });
+  const r = current.data.values?.[0] ?? [];
+  return {
+    campaignName: (r[0] ?? "").toString(),
+    channel: (r[1] ?? "").toString(),
+    audience: (r[2] ?? "").toString(),
+    subject: (r[3] ?? "").toString(),
+    messageBody: (r[4] ?? "").toString(),
+    status: (r[6] ?? "").toString() || "Draft",
+    notes: (r[9] ?? "").toString(),
+    smsBody: (r[10] ?? "").toString(),
+  };
+}
+
+/**
+ * Marks a campaign ready for Grok: Send (col F) TRUE, Status (col G) Queued.
+ * When `audience` is set, also writes Audience (col C) so a win-back or trial
+ * draft targets one person. Safe to call again on a row that is already Queued.
+ */
+export async function markCampaignQueued(row: number, audience?: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const data: { range: string; values: string[][] }[] = [
+    { range: `Campaigns!F${row}:G${row}`, values: [["TRUE", "Queued"]] },
+  ];
+  if (audience !== undefined) {
+    data.push({ range: `Campaigns!C${row}`, values: [[audience]] });
+  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+  invalidateLyfeSheetCache();
+}
+
+function cell(row: Record<string, string>, header: string): string {
+  const key = Object.keys(row).find((k) => k.toLowerCase() === header.toLowerCase());
+  return key ? (row[key] ?? "").trim() : "";
+}
+
+/**
+ * Email for one person. Cancelled "Email" (column H on that tab) wins;
+ * otherwise the Contacts tab. Blank when neither sheet has an address.
+ */
+export async function findEmailByFullName(fullName: string): Promise<string> {
+  const target = fullName.trim().toLowerCase();
+  if (!target) return "";
+
+  let cancelledEmail = "";
+  try {
+    const cancelled = await readTabRows("Cancelled (Oct)");
+    for (const row of cancelled) {
+      if (cell(row, "Name").toLowerCase() !== target) continue;
+      cancelledEmail = cell(row, "Email");
+      if (cancelledEmail) return cancelledEmail;
+    }
+  } catch (err) {
+    if (!(err instanceof SheetTabMissingError)) throw err;
+  }
+
+  try {
+    const contacts = await readTabRows("Contacts");
+    for (const row of contacts) {
+      if (cell(row, "Name").toLowerCase() !== target) continue;
+      const email = cell(row, "Email");
+      if (email) return email;
+    }
+  } catch (err) {
+    if (!(err instanceof SheetTabMissingError)) throw err;
+  }
+
+  return "";
+}
+
+export async function updateCampaignContent(
+  row: number,
+  input: { subject: string; messageBody: string; smsBody?: string; audience?: string }
+): Promise<void> {
+  const sheets = getSheetsClient();
+
+  const current = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Campaigns!G${row}`,
+  });
+  const status = current.data.values?.[0]?.[0] ?? "Draft";
+  if (!["Draft", "Error"].includes(status)) {
+    throw new Error(`Row ${row} can't be edited from status "${status}".`);
+  }
+
+  const data: { range: string; values: string[][] }[] = [
+    { range: `Campaigns!D${row}:E${row}`, values: [[input.subject, input.messageBody]] },
+  ];
+  if (input.smsBody !== undefined) {
+    data.push({ range: `Campaigns!K${row}`, values: [[input.smsBody]] });
+  }
+  if (input.audience !== undefined) {
+    data.push({ range: `Campaigns!C${row}`, values: [[input.audience]] });
+  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+  invalidateLyfeSheetCache();
+}
+
+/** Thrown when a tab genuinely doesn't exist yet (vs. a general API error). */
+export class SheetTabMissingError extends Error {
+  constructor(public tabName: string) {
+    super(`The "${tabName}" tab doesn't exist in the sheet yet.`);
+    this.name = "SheetTabMissingError";
+  }
+}
+
+function isMissingTabError(err: unknown, tabName: string): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("Unable to parse range") || message.includes(`${tabName}'!`) || message.includes(tabName);
+}
+
+/**
+ * Generic header-based tab reader: row 1 is treated as column names, and
+ * each data row comes back as {header: value}. Used for the read-only
+ * reference pages (Memberships, Summary, Cancelled, Past Due, Payments,
+ * SMS Conversations, Contacts) so this app never bakes real member data
+ * into source files — it's always read live from the sheet.
+ */
+export async function listSheetTitles(): Promise<string[]> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  return (meta.data.sheets ?? []).map((sheet) => sheet.properties?.title ?? "").filter(Boolean);
+}
+
+export async function readTabWithHeaders(
+  tabName: string
+): Promise<{ headers: string[]; rows: (Record<string, string> & { _row: number })[] }> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(tabName)}!A1:ZZ`,
+    });
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+
+  const values = res.data.values ?? [];
+  if (values.length === 0) return { headers: [], rows: [] };
+  const headers = values[0].map((h) => (h ?? "").toString().trim());
+  const rows = values.slice(1).map((row, i) => {
+    const obj = { _row: i + 2 } as Record<string, string> & { _row: number };
+    headers.forEach((h, idx) => {
+      if (h) obj[h] = (row[idx] ?? "").toString();
+    });
+    return obj;
+  });
+  return { headers: headers.filter(Boolean), rows };
+}
+
+export async function readTabRows(tabName: string): Promise<(Record<string, string> & { _row: number })[]> {
+  const { rows } = await readTabWithHeaders(tabName);
+  return rows;
+}
+
+/** Raw rows, no header assumption — used for the Summary tab (key/value pairs, not a table). */
+export async function readRawRows(tabName: string): Promise<string[][]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(tabName)}!A1:ZZ`,
+    });
+    return (res.data.values ?? []).map((r) => r.map((c) => (c ?? "").toString()));
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+}
+
+function columnLetter(index: number): string {
+  let n = index;
+  let letter = "";
+  do {
+    letter = String.fromCharCode(65 + (n % 26)) + letter;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letter;
+}
+
+/**
+ * Writes specific columns (matched by header name) on an existing row of
+ * any tab. Used for editable per-contact drafts that live directly on a
+ * reference tab (e.g. Past Due's Email Subject / Email Body / Email Status
+ * columns) rather than in the Campaigns tab.
+ */
+export async function updateTabRowCells(
+  tabName: string,
+  rowNumber: number,
+  values: Record<string, string>
+): Promise<void> {
+  const sheets = getSheetsClient();
+  let headerRes;
+  try {
+    headerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A1:ZZ1`,
+    });
+  } catch (err) {
+    if (isMissingTabError(err, tabName)) throw new SheetTabMissingError(tabName);
+    throw err;
+  }
+  const headers = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+
+  const data = Object.entries(values)
+    .map(([header, value]) => {
+      const colIndex = headers.findIndex((h) => h.toLowerCase() === header.toLowerCase());
+      if (colIndex === -1) return null;
+      return { range: `${tabName}!${columnLetter(colIndex)}${rowNumber}`, values: [[value]] };
+    })
+    .filter((d): d is { range: string; values: string[][] } => d !== null);
+
+  if (data.length === 0) return;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { valueInputOption: "RAW", data },
+  });
+  invalidateLyfeSheetCache();
+}
+
+function quotedTab(tabName: string): string {
+  return `'${tabName.replace(/'/g, "''")}'`;
+}
+
+/** Adds a tab when it is missing, then writes the header row if the tab is empty. */
+export async function ensureTab(tabName: string, headers: string[]): Promise<void> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  const titles = (meta.data.sheets ?? []).map((sheet) => sheet.properties?.title);
+  if (!titles.includes(tabName)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+    });
+  }
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1:ZZ1`,
+  });
+  const existing = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim()).filter(Boolean);
+  if (existing.length === 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(tabName)}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [headers] },
+    });
+    return;
+  }
+  await ensureHeaders(tabName, headers);
+}
+
+/** Appends any header names that are not already on row 1, at the end, without reordering. */
+export async function ensureHeaders(tabName: string, headers: string[]): Promise<void> {
+  const sheets = getSheetsClient();
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1:ZZ1`,
+  });
+  const existing = (headerRes.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+  const missing = headers.filter((header) => header && !existing.some((have) => have.toLowerCase() === header.toLowerCase()));
+  if (missing.length === 0 || existing.every((cell) => !cell)) return;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!${columnLetter(existing.length)}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [missing] },
+  });
+}
+
+/** Returns the 1-based row number the new row landed on, parsed from the API's updatedRange (e.g. "'Tab'!A5:F5" -> 5). */
+export async function appendTabRow(tabName: string, headers: string[], values: Record<string, string>): Promise<number> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(tabName)}!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [headers.map((header) => values[header] ?? "")] },
+  });
+  const updatedRange = res.data.updates?.updatedRange ?? "";
+  const match = updatedRange.match(/![A-Z]+(\d+)/);
+  invalidateLyfeSheetCache();
+  return match ? Number(match[1]) : NaN;
+}
+
+export async function appendAppointmentRequest(input: {
+  date: string;
+  time: string;
+  type: string;
+  member: string;
+  coach?: string;
+}): Promise<void> {
+  const sheets = getSheetsClient();
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "Appointments!A:F",
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[input.date, input.time, input.type, input.member, input.coach ?? "", "Requested"]],
+      },
+    });
+  } catch (err) {
+    if (isMissingTabError(err, "Appointments")) throw new SheetTabMissingError("Appointments");
+    throw err;
+  }
+  invalidateLyfeSheetCache();
+}
+
+const EMAIL_TEMPLATES_TAB = "Email Templates";
+const EMAIL_TEMPLATES_HEADERS = ["Name", "Subject", "Body", "Created"];
+
+export async function appendEmailTemplate(input: { name: string; subject: string; body: string }): Promise<void> {
+  await ensureTab(EMAIL_TEMPLATES_TAB, EMAIL_TEMPLATES_HEADERS);
+  await appendTabRow(EMAIL_TEMPLATES_TAB, EMAIL_TEMPLATES_HEADERS, {
+    Name: input.name,
+    Subject: input.subject,
+    Body: input.body,
+    Created: new Date().toLocaleDateString("en-US"),
+  });
+}
+
+const SEQUENCES_TAB = "Campaign Sequences";
+const SEQUENCES_HEADERS = [
+  "Sequence Name",
+  "Audience",
+  "Steps",
+  "Status",
+  "Start Date",
+  "Current Step",
+  "Next Run At",
+  "Last Sent At",
+  "Notes",
+];
+/** Old header -> new header, for sheets created before this column rename. Data cells are untouched — only the row-1 labels change. */
+const SEQUENCES_HEADER_RENAMES: Record<string, string> = { Name: "Sequence Name", Nodes: "Steps" };
+
+export type CampaignSequenceRow = {
+  row: number;
+  name: string;
+  audience: string;
+  startDate: string;
+  nodes: string;
+  status: string;
+  currentStep: string;
+  nextRunAt: string;
+  lastSentAt: string;
+  notes: string;
+};
+
+/** One-time, in-place rename of old column labels to the current schema — never moves or deletes data. */
+async function migrateSequenceHeaders(): Promise<void> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(SEQUENCES_TAB)}!A1:ZZ1`,
+  });
+  const existing = (res.data.values?.[0] ?? []).map((h) => (h ?? "").toString().trim());
+  if (existing.length === 0) return;
+  let changed = false;
+  const renamed = existing.map((h) => {
+    const next = SEQUENCES_HEADER_RENAMES[h];
+    if (next && !existing.includes(next)) {
+      changed = true;
+      return next;
+    }
+    return h;
+  });
+  if (changed) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${quotedTab(SEQUENCES_TAB)}!A1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [renamed] },
+    });
+  }
+}
+
+export async function listCampaignSequences(): Promise<CampaignSequenceRow[]> {
+  try {
+    await migrateSequenceHeaders();
+    await ensureHeaders(SEQUENCES_TAB, SEQUENCES_HEADERS);
+    const rows = await readTabRows(SEQUENCES_TAB);
+    return rows
+      .map((r) => ({
+        row: r._row,
+        name: r["Sequence Name"] ?? "",
+        audience: r["Audience"] ?? "",
+        startDate: r["Start Date"] ?? "",
+        nodes: r["Steps"] ?? "",
+        status: r["Status"] ?? "Draft",
+        currentStep: r["Current Step"] ?? "",
+        nextRunAt: r["Next Run At"] ?? "",
+        lastSentAt: r["Last Sent At"] ?? "",
+        notes: r["Notes"] ?? "",
+      }))
+      .filter((s) => s.name.trim() !== "");
+  } catch (err) {
+    if (err instanceof SheetTabMissingError) return [];
+    throw err;
+  }
+}
+
+export async function appendCampaignSequence(input: {
+  name: string;
+  audience: string;
+  startDate: string;
+  nodes: string;
+  status?: string;
+  currentStep?: string;
+  nextRunAt?: string;
+}): Promise<number> {
+  await migrateSequenceHeaders();
+  await ensureTab(SEQUENCES_TAB, SEQUENCES_HEADERS);
+  return appendTabRow(SEQUENCES_TAB, SEQUENCES_HEADERS, {
+    "Sequence Name": input.name,
+    Audience: input.audience,
+    "Start Date": input.startDate,
+    Steps: input.nodes,
+    Status: input.status ?? "Draft",
+    "Current Step": input.currentStep ?? "",
+    "Next Run At": input.nextRunAt ?? "",
+  });
+}
+
+export async function updateCampaignSequence(
+  row: number,
+  input: {
+    name?: string;
+    audience?: string;
+    startDate?: string;
+    nodes?: string;
+    status?: string;
+    currentStep?: string;
+    nextRunAt?: string;
+    lastSentAt?: string;
+    notes?: string;
+  }
+): Promise<void> {
+  await migrateSequenceHeaders();
+  await ensureHeaders(SEQUENCES_TAB, SEQUENCES_HEADERS);
+  const values: Record<string, string> = {};
+  if (input.name !== undefined) values["Sequence Name"] = input.name;
+  if (input.audience !== undefined) values["Audience"] = input.audience;
+  if (input.startDate !== undefined) values["Start Date"] = input.startDate;
+  if (input.nodes !== undefined) values["Steps"] = input.nodes;
+  if (input.status !== undefined) values["Status"] = input.status;
+  if (input.currentStep !== undefined) values["Current Step"] = input.currentStep;
+  if (input.nextRunAt !== undefined) values["Next Run At"] = input.nextRunAt;
+  if (input.lastSentAt !== undefined) values["Last Sent At"] = input.lastSentAt;
+  if (input.notes !== undefined) values["Notes"] = input.notes;
+  await updateTabRowCells(SEQUENCES_TAB, row, values);
+}
+
+/** Reads just the Status cell — used to refuse re-queueing a row that's already in flight or done. */
+export async function getCampaignSequenceStatus(row: number): Promise<string> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quotedTab(SEQUENCES_TAB)}!D${row}`,
+  });
+  return (res.data.values?.[0]?.[0] ?? "").toString();
+}
+
+export async function deleteSheetRow(tabName: string, rowNumber: number): Promise<void> {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: "sheets.properties.title,sheets.properties.sheetId",
+  });
+  const sheet = (meta.data.sheets ?? []).find((s) => s.properties?.title === tabName);
+  if (!sheet?.properties?.sheetId && sheet?.properties?.sheetId !== 0) {
+    throw new SheetTabMissingError(tabName);
+  }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: sheet.properties.sheetId,
+              dimension: "ROWS",
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        },
+      ],
+    },
+  });
+}

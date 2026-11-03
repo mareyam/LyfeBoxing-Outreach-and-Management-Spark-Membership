@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseClient, resolveBusinessId, SupabaseNotConfiguredError } from "@/lib/supabaseServer";
-import { rowNumberToId } from "@/lib/supabaseRowOrder";
+import { updateTabRowCells, SheetsNotConfiguredError, SheetTabMissingError } from "@/lib/googleSheetsServer";
 import { notifyGrok } from "@/lib/notifyGrok";
 import { webhookErrorFields } from "@/lib/webhookResponse";
+
+const TAB = "Past Due";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,19 +17,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "At least one row with an email is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseClient();
-    const businessId = await resolveBusinessId(supabase);
-
     const queuedRows: number[] = [];
     for (const item of valid) {
       try {
-        const id = await rowNumberToId(supabase, "past_due", businessId, item.row);
-        if (!id) continue;
-        const content: Record<string, string> = { email_status: "Queued" };
-        if (item.subject !== undefined) content.email_subject = item.subject ?? "";
-        if (item.messageBody !== undefined) content.email_body = item.messageBody;
-        const { error } = await supabase.from("past_due").update(content).eq("id", id).eq("business_id", businessId);
-        if (error) continue;
+        const content: Record<string, string> = {};
+        if (item.subject !== undefined) content["Email Subject"] = item.subject ?? "";
+        if (item.messageBody !== undefined) content["Email Body"] = item.messageBody;
+        if (Object.keys(content).length > 0) {
+          await updateTabRowCells(TAB, item.row, content);
+        }
+        await updateTabRowCells(TAB, item.row, { "Email Status": "Queued" });
         queuedRows.push(item.row);
       } catch {
         // skip rows that failed to update; the rest still proceed
@@ -40,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      await notifyGrok({ tab: "Past Due", rows: queuedRows, kind: "past-due" });
+      await notifyGrok({ tab: TAB, rows: queuedRows, kind: "past-due" });
     } catch (err) {
       const { error, status } = webhookErrorFields(err);
       return NextResponse.json({ error, queuedRows }, { status });
@@ -48,8 +46,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, queuedRows });
   } catch (err) {
-    if (err instanceof SupabaseNotConfiguredError) {
+    if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
+    }
+    if (err instanceof SheetTabMissingError) {
+      return NextResponse.json({ error: err.message, tabMissing: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }

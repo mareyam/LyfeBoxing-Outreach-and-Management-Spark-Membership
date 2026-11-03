@@ -1,5 +1,10 @@
 import "server-only";
 import { getSupabaseClient, resolveBusinessId } from "@/lib/supabaseServer";
+// NOTE: the row-by-row Sheets-based Leads UI (src/app/api/leads/{draft,generate,send,send-bulk})
+// and the old /api/cron/lead-sequence route have not been migrated in this pass — see the PR
+// description for the full inventory. They still touch the "Leads" Google Sheet tab directly,
+// not through this file, via src/lib/leadFollowup.ts + googleSheetsServer.ts.
+import { ensureHeaders } from "@/lib/googleSheetsServer";
 
 export type Playbook = {
   tone: string;
@@ -127,6 +132,13 @@ export async function appendExample(example: DraftExample): Promise<void> {
     final: example.final,
     example_date: example.date,
   });
+}
+
+const LEAD_EXTRA_HEADERS = ["AI Original", "Example Logged", "Draft Step"];
+
+/** Used only by the legacy Sheets-backed lead routes (see note above). */
+export async function ensureLeadDraftColumns(): Promise<void> {
+  await ensureHeaders("Leads", LEAD_EXTRA_HEADERS);
 }
 
 export function playbookPromptBlock(playbook: Playbook, examples: DraftExample[], trialUrl: string): string {

@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseClient, resolveBusinessId, SupabaseNotConfiguredError } from "@/lib/supabaseServer";
-import { rowNumberToId } from "@/lib/supabaseRowOrder";
+import {
+  readTabRows,
+  appendEmailTemplate,
+  deleteSheetRow,
+  updateTabRowCells,
+  SheetsNotConfiguredError,
+  SheetTabMissingError,
+} from "@/lib/googleSheetsServer";
 
 export async function GET() {
   try {
-    const supabase = getSupabaseClient();
-    const businessId = await resolveBusinessId(supabase);
-    const { data, error } = await supabase
-      .from("email_templates")
-      .select("*")
-      .eq("business_id", businessId)
-      .order("created_at", { ascending: true });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const templates = (data ?? [])
-      .map((r, i) => ({
-        row: i + 2,
-        name: r.name ?? "",
-        subject: r.subject ?? "",
-        body: r.body ?? "",
-        created: r.created ?? "",
-      }))
-      .filter((t) => t.name.trim() !== "");
+    const rows = await readTabRows("Email Templates");
+    const templates = rows.map((r) => ({
+      row: r._row,
+      name: r["Name"] ?? "",
+      subject: r["Subject"] ?? "",
+      body: r["Body"] ?? "",
+      created: r["Created"] ?? "",
+    }));
     return NextResponse.json({ templates });
   } catch (err) {
-    if (err instanceof SupabaseNotConfiguredError) {
+    if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
+    }
+    if (err instanceof SheetTabMissingError) {
+      return NextResponse.json({ templates: [] });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
   }
@@ -37,19 +37,10 @@ export async function POST(req: NextRequest) {
     if (!name || !subject || !templateBody) {
       return NextResponse.json({ error: "name, subject, and body are required." }, { status: 400 });
     }
-    const supabase = getSupabaseClient();
-    const businessId = await resolveBusinessId(supabase);
-    const { error } = await supabase.from("email_templates").insert({
-      business_id: businessId,
-      name,
-      subject,
-      body: templateBody,
-      created: new Date().toLocaleDateString("en-US"),
-    });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await appendEmailTemplate({ name, subject, body: templateBody });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof SupabaseNotConfiguredError) {
+    if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
@@ -66,19 +57,10 @@ export async function PATCH(req: NextRequest) {
     if (!name || !subject || !templateBody) {
       return NextResponse.json({ error: "name, subject, and body are required." }, { status: 400 });
     }
-    const supabase = getSupabaseClient();
-    const businessId = await resolveBusinessId(supabase);
-    const id = await rowNumberToId(supabase, "email_templates", businessId, row);
-    if (!id) return NextResponse.json({ error: `Row ${row} not found.` }, { status: 404 });
-    const { error } = await supabase
-      .from("email_templates")
-      .update({ name, subject, body: templateBody })
-      .eq("id", id)
-      .eq("business_id", businessId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await updateTabRowCells("Email Templates", row, { Name: name, Subject: subject, Body: templateBody });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof SupabaseNotConfiguredError) {
+    if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
@@ -91,21 +73,10 @@ export async function DELETE(req: NextRequest) {
     if (!row || row < 2) {
       return NextResponse.json({ error: "A valid row number is required." }, { status: 400 });
     }
-    const supabase = getSupabaseClient();
-    const businessId = await resolveBusinessId(supabase);
-    const id = await rowNumberToId(supabase, "email_templates", businessId, row);
-    if (!id) return NextResponse.json({ ok: true }); // already gone
-    // Never delete rows: templates are "removed" by blanking them out so
-    // row-number ordering for everything after it stays stable.
-    const { error } = await supabase
-      .from("email_templates")
-      .update({ name: "", subject: "", body: "" })
-      .eq("id", id)
-      .eq("business_id", businessId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await deleteSheetRow("Email Templates", row);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof SupabaseNotConfiguredError) {
+    if (err instanceof SheetsNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 });
