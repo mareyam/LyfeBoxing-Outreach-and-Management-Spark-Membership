@@ -1255,7 +1255,7 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
             <th className="py-3 pr-4 w-[36%]">Contact</th>
             <th className="py-3 pr-4 w-[20%]">Phone</th>
             <th className="py-3 pr-4 w-[20%]">Type</th>
-            <th className="py-3 pr-4 w-[24%]">Actions</th>
+            {/* <th className="py-3 pr-4 w-[24%]">Actions</th> */}
           </tr>
         </thead>
         <tbody>
@@ -1280,7 +1280,7 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
                   {c.contactType || "Not Assigned"}
                 </span>
               </td>
-              <td className="py-3 pr-4">
+              {/* <td className="py-3 pr-4">
                 {c.email ? (
                   <span className="text-blue-700 font-semibold text-sm">Contact</span>
                 ) : (
@@ -1288,7 +1288,7 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
                     No email
                   </span>
                 )}
-              </td>
+              </td> */}
             </tr>
           ))}
         </tbody>
