@@ -2194,7 +2194,6 @@ function PastDueList({ rows, meta }: { rows: SheetRow[]; meta: SheetMeta }) {
     setMembers((prev) => prev.map((m) => (m.row === row ? { ...m, ...changes } : m)));
   }
 
-  const missingDraftCount = members.filter((m) => !m.emailBody).length;
   const selectableRows = pageItems
     .filter((m) => (m.emailStatus === "Draft" || m.emailStatus === "Error" || !m.emailStatus) && m.emailBody && emailFor(m.name, m.email))
     .map((m) => m.row);
@@ -2208,26 +2207,8 @@ function PastDueList({ rows, meta }: { rows: SheetRow[]; meta: SheetMeta }) {
     });
   }
 
+  /** Drafts everyone not already sent/queued using the current tone box, overwriting any existing draft. */
   async function generateAllDrafts() {
-    if (!brief.trim()) throw new Error("Type what the draft should say first.");
-    const draft = await generateBriefDraft({ brief, channel: "Email", contextHint: PAST_DUE_CONTEXT_HINT });
-    const missing = members.filter((m) => !m.emailBody);
-    for (const m of missing) {
-      const subject = personalize(draft.subject, m.name);
-      const messageBody = personalize(draft.body, m.name);
-      const res = await fetch("/api/past-due/draft", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ row: m.row, subject, messageBody }),
-      });
-      if (res.ok) {
-        patchMember(m.row, { emailSubject: subject, emailBody: messageBody, emailStatus: "Draft" });
-      }
-    }
-  }
-
-  /** Re-drafts everyone not already sent/queued, overwriting any existing draft with this tone. */
-  async function regenerateAllDrafts() {
     if (!brief.trim()) throw new Error("Type what the draft should say first.");
     const draft = await generateBriefDraft({ brief, channel: "Email", contextHint: PAST_DUE_CONTEXT_HINT });
     const targets = members.filter((m) => !["Sent", "Sending", "Queued"].includes(m.emailStatus));
@@ -2294,17 +2275,12 @@ function PastDueList({ rows, meta }: { rows: SheetRow[]; meta: SheetMeta }) {
             rows={2}
             className="w-full rounded-xl bg-indigo-600/60 border border-indigo-400/40 px-3 py-2 text-sm text-white placeholder:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
           />
-          {missingDraftCount > 0 && (
-            <p className="inline-flex items-start gap-1.5 text-xs text-indigo-100 mt-3">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.75} />
-              All {missingDraftCount} draft{missingDraftCount === 1 ? "" : "s"} will be generated based on this goal.
-            </p>
-          )}
-          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50 [&>div>span]:text-indigo-100">
-            <GenerateAllButton missingCount={missingDraftCount} onGenerate={generateAllDrafts} />
-          </div>
-          <div className="mt-3">
-            <RegenerateAllLink onRegenerate={regenerateAllDrafts} />
+          <p className="inline-flex items-start gap-1.5 text-xs text-indigo-100 mt-3">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.75} />
+            Every draft (new or already generated) will be rewritten using this tone.
+          </p>
+          <div className="mt-4 [&_button]:w-full [&_button]:justify-center [&_button]:bg-white [&_button]:text-indigo-700 [&_button]:hover:bg-indigo-50">
+            <GenerateAllButton onGenerate={generateAllDrafts} />
           </div>
         </div>
       </div>
@@ -2577,13 +2553,9 @@ function PastDueSendSelectedButton({
   );
 }
 
-function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number; onGenerate: () => Promise<void> }) {
+function GenerateAllButton({ onGenerate }: { onGenerate: () => Promise<void> }) {
   const [state, setState] = useState<"idle" | "sending" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
-
-  if (missingCount === 0) {
-    return <span className="text-sm font-medium text-neutral-500">All drafts generated</span>;
-  }
 
   return (
     <div className="flex items-center gap-2">
@@ -2604,37 +2576,8 @@ function GenerateAllButton({ missingCount, onGenerate }: { missingCount: number;
         className="inline-flex items-center gap-2 rounded-full bg-neutral-900 text-white px-4 py-2 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50"
       >
         <Sparkles className="h-4 w-4" strokeWidth={2} />
-        {state === "sending" ? "Drafting…" : `Generate all (${missingCount})`}
+        {state === "sending" ? "Drafting…" : "Generate drafts"}
       </button>
-    </div>
-  );
-}
-
-function RegenerateAllLink({ onRegenerate }: { onRegenerate: () => Promise<void> }) {
-  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <button
-        onClick={async () => {
-          setState("sending");
-          setError(null);
-          try {
-            await onRegenerate();
-            setState("idle");
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "Something went wrong — try again.");
-            setState("error");
-          }
-        }}
-        disabled={state === "sending"}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-100 hover:text-white disabled:opacity-50"
-      >
-        <RefreshCw className="h-3 w-3" strokeWidth={2} />
-        {state === "sending" ? "Regenerating…" : "Regenerate all drafts"}
-      </button>
-      {state === "error" && error && <p className="text-xs text-red-200">{error}</p>}
     </div>
   );
 }
