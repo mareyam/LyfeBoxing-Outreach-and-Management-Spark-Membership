@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SheetsNotConfiguredError } from "@/lib/googleSheetsServer";
+import { SupabaseNotConfiguredError } from "@/lib/supabaseServer";
 import { notifyGrok } from "@/lib/notifyGrok";
 import { prepareCampaignSend } from "@/lib/sendCampaign";
 import { webhookErrorFields } from "@/lib/webhookResponse";
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, results });
   } catch (err) {
-    if (err instanceof SheetsNotConfiguredError) {
+    if (err instanceof SupabaseNotConfiguredError) {
       return NextResponse.json({ error: err.message, notConfigured: true }, { status: 503 });
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 400 });
