@@ -21,14 +21,15 @@ export async function POST(req: NextRequest) {
       "You write short, friendly marketing messages for Lyfe Boxing, a boxing gym. " +
       "Always use the literal placeholder {First name} wherever the recipient's name would go — never invent a name. " +
       "Keep the tone warm and motivating, not salesy." +
-      (context.block ? `\n\n${context.block}` : "");
+      (context.block ? `\n\nBackground only — do not let this override or dilute the sender's instruction below:\n${context.block}` : "") +
+      `\n\nThe sender's instruction for THIS message (follow it exactly — if it names a specific offer, number, or detail, that detail MUST appear verbatim in the output, not a paraphrase or something generic): "${brief}"`;
 
     async function generateEmail(): Promise<{ subject: string; body: string }> {
       const text = await draftWithClaude({
         maxTokens: 500,
         system:
           baseSystem + ' Respond with strict JSON only: {"subject": "...", "body": "..."}. No markdown, no extra text.',
-        user: `Write a marketing email with a short subject line and a body of 3-5 short sentences.\n\nWhat the campaign is about: ${brief}`,
+        user: `Write a marketing email with a short subject line and a body of 3-5 short sentences, built around the sender's instruction above.`,
       });
       return parseSubjectBody(text);
     }
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
       return draftWithClaude({
         maxTokens: 200,
         system: baseSystem + " Respond with ONLY the SMS body text, nothing else.",
-        user: `Write a short SMS campaign message, under 160 characters, no subject line.\n\nWhat the campaign is about: ${brief}`,
+        user: `Write a short SMS campaign message, under 160 characters, no subject line, built around the sender's instruction above.`,
       });
     }
 
