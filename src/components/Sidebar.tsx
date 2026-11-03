@@ -33,16 +33,17 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
     heading: "Overview",
     links: [{ href: "/lyfe-boxing", label: "Monthly Summary", icon: BarChart2 }],
   },
-  {
-    heading: "CRM & Members",
-    links: [
-      { href: "/lyfe-boxing/contacts", label: "All Contacts", icon: Users },
-      { href: "/lyfe-boxing/leads", label: "Leads", icon: UserPlus },
-      { href: "/lyfe-boxing/memberships", label: "Memberships", icon: CreditCard },
-      { href: "/lyfe-boxing/payments", label: "Payments", icon: Wallet },
-      { href: "/lyfe-boxing/appointments", label: "Appointments", icon: Calendar },
-    ],
-  },
+  // temporarily hidden
+  // {
+  //   heading: "CRM & Members",
+  //   links: [
+  //     { href: "/lyfe-boxing/contacts", label: "All Contacts", icon: Users },
+  //     { href: "/lyfe-boxing/leads", label: "Leads", icon: UserPlus },
+  //     { href: "/lyfe-boxing/memberships", label: "Memberships", icon: CreditCard },
+  //     { href: "/lyfe-boxing/payments", label: "Payments", icon: Wallet },
+  //     { href: "/lyfe-boxing/appointments", label: "Appointments", icon: Calendar },
+  //   ],
+  // },
   // temporarily hidden
   // {
   //   heading: "Retention & Growth",
