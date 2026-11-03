@@ -5524,7 +5524,8 @@ function MonthlySummaryList({
     if (!start) return [];
 
     const list = [];
-    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const floor = new Date(2026, 4, 1); // Don't show months before May 2026.
+    const cursor = start.getTime() < floor.getTime() ? floor : new Date(start.getFullYear(), start.getMonth(), 1);
     const last = new Date(now.getFullYear(), now.getMonth(), 1);
 
     while (cursor.getTime() <= last.getTime()) {
