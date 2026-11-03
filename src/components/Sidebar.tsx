@@ -61,7 +61,7 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
     links: [
       { href: "/lyfe-boxing/campaigns", label: "Campaigns", icon: Megaphone },
       { href: "/lyfe-boxing/email-templates", label: "Email Templates", icon: FileText },
-      { href: "/lyfe-boxing/examples", label: "Saved Examples", icon: BookOpen },
+      // temporarily hidden — { href: "/lyfe-boxing/examples", label: "Saved Examples", icon: BookOpen },
       // temporarily hidden — { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
       { label: "Workflows", icon: Workflow },
     ],
