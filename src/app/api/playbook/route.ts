@@ -27,6 +27,7 @@ export async function PUT(req: NextRequest) {
       faqs: String(body?.faqs ?? ""),
       trialLink: String(body?.trialLink ?? ""),
       bookingLink: String(body?.bookingLink ?? ""),
+      bookingCalendarUrl: String(body?.bookingCalendarUrl ?? ""),
     };
     await writePlaybook(playbook);
     return NextResponse.json({ ok: true });

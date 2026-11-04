@@ -13,6 +13,7 @@ export type Playbook = {
   faqs: string;
   trialLink: string;
   bookingLink: string;
+  bookingCalendarUrl: string;
 };
 
 export type DraftExample = {
@@ -26,7 +27,7 @@ export type DraftExample = {
 const FALLBACK_TONE = "Warm, encouraging, and plain-spoken. Never pushy.";
 
 export function emptyPlaybook(): Playbook {
-  return { tone: "", offers: "", prices: "", faqs: "", trialLink: "", bookingLink: "" };
+  return { tone: "", offers: "", prices: "", faqs: "", trialLink: "", bookingLink: "", bookingCalendarUrl: "" };
 }
 
 /** Reads the business's playbook from Supabase, seeding a default row if none exists yet. */
@@ -36,7 +37,7 @@ export async function readPlaybook(): Promise<Playbook> {
 
   const { data, error } = await supabase
     .from("playbook")
-    .select("tone, offers, prices, faqs, trial_link, booking_link")
+    .select("tone, offers, prices, faqs, trial_link, booking_link, booking_calendar_url")
     .eq("business_id", businessId)
     .maybeSingle();
 
@@ -52,6 +53,7 @@ export async function readPlaybook(): Promise<Playbook> {
       faqs: seeded.faqs,
       trial_link: seeded.trialLink,
       booking_link: seeded.bookingLink,
+      booking_calendar_url: seeded.bookingCalendarUrl,
     });
     return seeded;
   }
@@ -63,6 +65,7 @@ export async function readPlaybook(): Promise<Playbook> {
     faqs: data.faqs ?? "",
     trialLink: data.trial_link ?? "",
     bookingLink: data.booking_link ?? "",
+    bookingCalendarUrl: data.booking_calendar_url ?? "",
   };
 }
 
@@ -78,10 +81,21 @@ export async function writePlaybook(values: Playbook): Promise<void> {
       faqs: values.faqs,
       trial_link: values.trialLink,
       booking_link: values.bookingLink,
+      booking_calendar_url: values.bookingCalendarUrl,
     },
     { onConflict: "business_id" }
   );
   if (error) throw error;
+}
+
+/** Used by "Send calendar link" buttons on Replies and interested leads. */
+export async function resolveBookingCalendarUrl(): Promise<string> {
+  try {
+    const playbook = await readPlaybook();
+    return playbook.bookingCalendarUrl.trim();
+  } catch {
+    return "";
+  }
 }
 
 export async function resolveTrialBookingUrl(): Promise<string> {

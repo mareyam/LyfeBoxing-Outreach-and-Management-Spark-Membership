@@ -11,9 +11,18 @@ type PlaybookForm = {
   faqs: string;
   trialLink: string;
   bookingLink: string;
+  bookingCalendarUrl: string;
 };
 
-const EMPTY: PlaybookForm = { tone: "", offers: "", prices: "", faqs: "", trialLink: "", bookingLink: "" };
+const EMPTY: PlaybookForm = {
+  tone: "",
+  offers: "",
+  prices: "",
+  faqs: "",
+  trialLink: "",
+  bookingLink: "",
+  bookingCalendarUrl: "",
+};
 
 export function PlaybookView() {
   const [form, setForm] = useState<PlaybookForm>(EMPTY);
@@ -105,6 +114,21 @@ export function PlaybookView() {
               />
               <p className="text-xs text-neutral-400 mt-1">
                 Included as a clear call-to-action in every lead follow-up draft the cron job generates.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-neutral-700 block mb-1" htmlFor="booking-calendar-url">
+                Booking calendar URL
+              </label>
+              <input
+                id="booking-calendar-url"
+                value={form.bookingCalendarUrl}
+                onChange={(e) => update("bookingCalendarUrl", e.target.value)}
+                placeholder="https://"
+                className="w-full rounded-xl border border-neutral-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+              />
+              <p className="text-xs text-neutral-400 mt-1">
+                Sent by the &ldquo;Send calendar link&rdquo; button on Replies and on interested leads.
               </p>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
