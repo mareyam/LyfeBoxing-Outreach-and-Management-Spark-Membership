@@ -104,3 +104,88 @@ export async function notifyGrok({ tab, rows, kind, channel, smsBody, row, actio
     throw new Error(`Webhook responded ${res.status}`);
   }
 }
+
+/**
+ * Posts an arbitrary JSON payload to the Grok webhook (bypassing the
+ * sheet-row shape notifyGrok() expects), with the same
+ * retry-once-on-network-error-or-5xx behavior. Used for nurture emails,
+ * calendar links, appointment reminders, and the daily report — every
+ * payload here must include business_id per the webhook contract.
+ */
+export async function notifyGrokPayload(payload: Record<string, unknown>, label: string): Promise<void> {
+  const url = readEnv("GROK_WEBHOOK_URL");
+  const auth = readEnv("GROK_WEBHOOK_AUTH");
+  if (!url || !auth) {
+    console.error(`[notifyGrok:${label}] Webhook not configured`);
+    throw new WebhookNotConfiguredError();
+  }
+
+  const body = JSON.stringify({ ...payload, queuedAt: new Date().toISOString() });
+
+  async function post(): Promise<Response> {
+    return fetch(url as string, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${auth}`,
+      },
+      body,
+      cache: "no-store",
+    });
+  }
+
+  let res: Response;
+  try {
+    res = await post();
+  } catch {
+    console.error(`[notifyGrok:${label}] network error, retrying once`);
+    try {
+      res = await post();
+    } catch {
+      console.error(`[notifyGrok:${label}] network error on retry`);
+      throw new Error("Couldn't reach the webhook.");
+    }
+  }
+
+  if (isRetryableStatus(res.status)) {
+    console.error(`[notifyGrok:${label}] status ${res.status}, retrying once`);
+    try {
+      res = await post();
+    } catch {
+      console.error(`[notifyGrok:${label}] network error on retry`);
+      throw new Error("Couldn't reach the webhook.");
+    }
+  }
+
+  console.log(`[notifyGrok:${label}] status ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`Webhook responded ${res.status}`);
+  }
+}
+
+export type NotifyGrokNurtureInput = {
+  businessId: string;
+  leadId: string;
+  to: string;
+  firstName: string;
+  subject: string;
+  body: string;
+  stepNo: number;
+};
+
+/** Queues a nurture-sequence email through the Grok webhook. */
+export async function notifyGrokNurture(input: NotifyGrokNurtureInput): Promise<void> {
+  await notifyGrokPayload(
+    {
+      type: "nurture",
+      business_id: input.businessId,
+      lead_id: input.leadId,
+      to: input.to,
+      first_name: input.firstName,
+      subject: input.subject,
+      body: input.body,
+      step_no: input.stepNo,
+    },
+    `nurture lead=${input.leadId} step=${input.stepNo}`
+  );
+}

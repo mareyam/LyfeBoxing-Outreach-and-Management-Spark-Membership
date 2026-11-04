@@ -21,6 +21,9 @@ import {
   Megaphone,
   FileText,
   Workflow,
+  Mail,
+  MessageSquareText,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import CompanySwitcher from "./CompanySwitcher";
@@ -60,6 +63,9 @@ const lyfeBoxingGroups: { heading: string; links: SidebarLinkDef[] }[] = [
     heading: "Marketing",
     links: [
       { href: "/lyfe-boxing/campaigns", label: "Campaigns", icon: Megaphone },
+      { href: "/lyfe-boxing/nurture", label: "Nurture Sequence", icon: Mail },
+      { href: "/lyfe-boxing/replies", label: "Replies", icon: MessageSquareText },
+      { href: "/lyfe-boxing/daily-report", label: "Daily Report", icon: ClipboardList },
       { href: "/lyfe-boxing/email-templates", label: "Email Templates", icon: FileText },
       // temporarily hidden — { href: "/lyfe-boxing/examples", label: "Saved Examples", icon: BookOpen },
       // temporarily hidden — { href: "/lyfe-boxing/sms", label: "SMS Conversations" },
