@@ -104,3 +104,79 @@ export async function notifyGrok({ tab, rows, kind, channel, smsBody, row, actio
     throw new Error(`Webhook responded ${res.status}`);
   }
 }
+
+export type NotifyGrokNurtureInput = {
+  businessId: string;
+  leadId: string;
+  to: string;
+  firstName: string;
+  subject: string;
+  body: string;
+  stepNo: number;
+};
+
+/**
+ * Queues a nurture-sequence email through the same Grok webhook, using the
+ * raw payload shape the nurture cron needs rather than the sheet-row shape
+ * notifyGrok() expects. Same retry-once-on-network-error-or-5xx behavior.
+ */
+export async function notifyGrokNurture(input: NotifyGrokNurtureInput): Promise<void> {
+  const url = readEnv("GROK_WEBHOOK_URL");
+  const auth = readEnv("GROK_WEBHOOK_AUTH");
+  if (!url || !auth) {
+    console.error("[notifyGrokNurture] Webhook not configured");
+    throw new WebhookNotConfiguredError();
+  }
+
+  const body = JSON.stringify({
+    type: "nurture",
+    business_id: input.businessId,
+    lead_id: input.leadId,
+    to: input.to,
+    first_name: input.firstName,
+    subject: input.subject,
+    body: input.body,
+    step_no: input.stepNo,
+    queuedAt: new Date().toISOString(),
+  });
+
+  async function post(): Promise<Response> {
+    return fetch(url as string, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${auth}`,
+      },
+      body,
+      cache: "no-store",
+    });
+  }
+
+  let res: Response;
+  try {
+    res = await post();
+  } catch {
+    console.error(`[notifyGrokNurture] network error lead=${input.leadId} step=${input.stepNo}, retrying once`);
+    try {
+      res = await post();
+    } catch {
+      console.error(`[notifyGrokNurture] network error on retry lead=${input.leadId} step=${input.stepNo}`);
+      throw new Error("Couldn't reach the webhook.");
+    }
+  }
+
+  if (isRetryableStatus(res.status)) {
+    console.error(`[notifyGrokNurture] status ${res.status} lead=${input.leadId} step=${input.stepNo}, retrying once`);
+    try {
+      res = await post();
+    } catch {
+      console.error(`[notifyGrokNurture] network error on retry lead=${input.leadId} step=${input.stepNo}`);
+      throw new Error("Couldn't reach the webhook.");
+    }
+  }
+
+  console.log(`[notifyGrokNurture] status ${res.status} lead=${input.leadId} step=${input.stepNo}`);
+  if (!res.ok) {
+    throw new Error(`Webhook responded ${res.status}`);
+  }
+}
