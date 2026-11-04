@@ -11,7 +11,15 @@ export class AiNotConfiguredError extends Error {
 }
 
 export async function loadGenerationContext(): Promise<{ playbook: Playbook; examples: DraftExample[]; trialUrl: string; block: string }> {
-  let playbook: Playbook = { tone: "", offers: "", prices: "", faqs: "", trialLink: "", bookingLink: "" };
+  let playbook: Playbook = {
+    tone: "",
+    offers: "",
+    prices: "",
+    faqs: "",
+    trialLink: "",
+    bookingLink: "",
+    bookingCalendarUrl: "",
+  };
   let examples: DraftExample[] = [];
   try {
     playbook = await readPlaybook();
