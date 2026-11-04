@@ -6,11 +6,11 @@
     },
     {
       "path": "/api/cron/nurture",
-      "schedule": "0 * * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/cron/appointment-reminders",
-      "schedule": "0 * * * *"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/daily-report",

@@ -5,8 +5,7 @@ import { notifyGrokPayload } from "@/lib/notifyGrok";
 
 export const maxDuration = 300;
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Window = { daysBefore: 3 | 1; column: "reminder_3d_sent_at" | "reminder_1d_sent_at" };
 const WINDOWS: Window[] = [
@@ -15,9 +14,10 @@ const WINDOWS: Window[] = [
 ];
 
 /**
- * Hourly: for each booked appointment landing in the next [N days, N days + 1h)
- * window that hasn't had that reminder sent yet, queues a reminder through the
- * Grok webhook and records reminder_{3d,1d}_sent_at so it's never sent twice.
+ * Daily (Hobby plan allows one cron run per day, not hourly): for each booked
+ * appointment landing in the next [N days, N days + 24h) window that hasn't
+ * had that reminder sent yet, queues a reminder through the Grok webhook and
+ * records reminder_{3d,1d}_sent_at so it's never sent twice.
  */
 export async function GET(req: NextRequest) {
   if (!cronAuthorized(req)) {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     for (const window of WINDOWS) {
       const from = new Date(now + window.daysBefore * DAY_MS).toISOString();
-      const to = new Date(now + window.daysBefore * DAY_MS + HOUR_MS).toISOString();
+      const to = new Date(now + window.daysBefore * DAY_MS + DAY_MS).toISOString();
 
       const { data: appointments, error } = await supabase
         .from("appointments")
