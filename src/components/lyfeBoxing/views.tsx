@@ -1049,41 +1049,43 @@ function MembershipsByPlan({ rows }: { rows: SheetRow[] }) {
             </div>
           </div>
         </div>
-        <table className="w-full text-sm table-fixed">
-          <thead>
-            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-              <th className="py-3 pr-4 w-[28%]">Member</th>
-              <th className="py-3 pr-4 w-[18%]">Plan</th>
-              <th className="py-3 pr-4 w-[14%]">Expires</th>
-              <th className="py-3 pr-4 w-[14%]">Overdue</th>
-              <th className="py-3 pr-4 w-[14%]">Next Payment</th>
-              <th className="py-3 pr-4 w-[12%]">Staff</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((m, i) => (
-              <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-                <td className="py-3 pr-4">
-                  <span className="flex items-center gap-2.5 min-w-0">
-                    <Avatar name={m.name} size="sm" />
-                    <span className="min-w-0">
-                      <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
-                    </span>
-                  </span>
-                </td>
-                <td className="py-3 pr-4">
-                  <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.membership)}`}>
-                    {m.membership}
-                  </span>
-                </td>
-                <td className="py-3 pr-4 text-neutral-700 truncate">{m.expires || "—"}</td>
-                <td className="py-3 pr-4 text-neutral-700 truncate">{formatMoneyCell(m.overdue)}</td>
-                <td className="py-3 pr-4 text-neutral-700 truncate">{m.nextPayment || "—"}</td>
-                <td className="py-3 pr-4 text-neutral-500 truncate">{m.staff || "—"}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                <th className="py-3 pr-4 w-[28%]">Member</th>
+                <th className="py-3 pr-4 w-[18%]">Plan</th>
+                <th className="py-3 pr-4 w-[14%]">Expires</th>
+                <th className="py-3 pr-4 w-[14%]">Overdue</th>
+                <th className="py-3 pr-4 w-[14%]">Next Payment</th>
+                <th className="py-3 pr-4 w-[12%]">Staff</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pageItems.map((m, i) => (
+                <tr key={`${m.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                  <td className="py-3 pr-4">
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <Avatar name={m.name} size="sm" />
+                      <span className="min-w-0">
+                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.membership)}`}>
+                      {m.membership}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 text-neutral-700 truncate">{m.expires || "—"}</td>
+                  <td className="py-3 pr-4 text-neutral-700 truncate">{formatMoneyCell(m.overdue)}</td>
+                  <td className="py-3 pr-4 text-neutral-700 truncate">{m.nextPayment || "—"}</td>
+                  <td className="py-3 pr-4 text-neutral-500 truncate">{m.staff || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
           <p className="text-sm text-neutral-500">
             Showing {pageItems.length} of {filtered.length} members
@@ -1249,50 +1251,52 @@ function ContactsTable({ rows }: { rows: SheetRow[] }) {
           </div>
         </div>
       </div>
-      <table className="w-full text-sm table-fixed">
-        <thead>
-          <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-            <th className="py-3 pr-4 w-[36%]">Contact</th>
-            <th className="py-3 pr-4 w-[20%]">Phone</th>
-            <th className="py-3 pr-4 w-[20%]">Type</th>
-            {/* <th className="py-3 pr-4 w-[24%]">Actions</th> */}
-          </tr>
-        </thead>
-        <tbody>
-          {pageItems.map((c, i) => (
-            <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
-              <td className="py-3 pr-4">
-                <span className="flex items-center gap-2.5 min-w-0">
-                  <Avatar name={c.name} size="sm" />
-                  <span className="min-w-0">
-                    <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
-                    <span className="block text-xs text-neutral-400 truncate">{c.email || "—"}</span>
-                  </span>
-                </span>
-              </td>
-              <td className="py-3 pr-4 text-neutral-700 truncate">{c.phone || "—"}</td>
-              <td className="py-3 pr-4">
-                <span
-                  className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
-                    c.contactType
-                  )}`}
-                >
-                  {c.contactType || "Not Assigned"}
-                </span>
-              </td>
-              {/* <td className="py-3 pr-4">
-                {c.email ? (
-                  <span className="text-blue-700 font-semibold text-sm">Contact</span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                    No email
-                  </span>
-                )}
-              </td> */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm table-fixed">
+          <thead>
+            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+              <th className="py-3 pr-4 w-[36%]">Contact</th>
+              <th className="py-3 pr-4 w-[20%]">Phone</th>
+              <th className="py-3 pr-4 w-[20%]">Type</th>
+              {/* <th className="py-3 pr-4 w-[24%]">Actions</th> */}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {pageItems.map((c, i) => (
+              <tr key={`${c.name}-${i}`} className="border-b border-neutral-50 last:border-0 align-top">
+                <td className="py-3 pr-4">
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Avatar name={c.name} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
+                      <span className="block text-xs text-neutral-400 truncate">{c.email || "—"}</span>
+                    </span>
+                  </span>
+                </td>
+                <td className="py-3 pr-4 text-neutral-700 truncate">{c.phone || "—"}</td>
+                <td className="py-3 pr-4">
+                  <span
+                    className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
+                      c.contactType
+                    )}`}
+                  >
+                    {c.contactType || "Not Assigned"}
+                  </span>
+                </td>
+                {/* <td className="py-3 pr-4">
+                  {c.email ? (
+                    <span className="text-blue-700 font-semibold text-sm">Contact</span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                      No email
+                    </span>
+                  )}
+                </td> */}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
         <p className="text-sm text-neutral-500">
           Showing {pageItems.length} of {filtered.length} contacts
@@ -1707,77 +1711,79 @@ function CancelledTable({ rows }: { rows: SheetRow[] }) {
             />
           </div>
         )}
-        <table className="w-full text-sm table-fixed">
-          <thead>
-            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-              <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4 w-[32%]">Member</th>
-              <th className="py-3 pr-4 w-[24%]">Reason Category</th>
-              <th className="py-3 pr-4 w-[20%]">Plan</th>
-              <th className="py-3 pr-4 w-[20%]">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((c, i) => {
-              const canSelect = selectableNames.includes(c.name);
-              const hasEmail = !!emailFor(c.name, c.email);
-              const campaign = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
-              return (
-                <tr
-                  key={`${c.name}-${i}`}
-                  className={`border-b border-neutral-50 last:border-0 align-top ${
-                    campaign?.status === "Draft" ? "bg-amber-50/60" : ""
-                  }`}
-                >
-                  <td className="py-3 pr-2">
-                    {canSelect && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(c.name)}
-                        onChange={() => toggleSelected(c.name)}
-                        className="rounded border-neutral-300"
-                      />
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <Avatar name={c.name} size="sm" />
-                      <span className="min-w-0">
-                        <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
-                        <span className="block text-xs text-neutral-400 truncate">{emailFor(c.name, c.email) || "—"}</span>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                <th className="py-3 pr-2 w-6"></th>
+                <th className="py-3 pr-4 w-[32%]">Member</th>
+                <th className="py-3 pr-4 w-[24%]">Reason Category</th>
+                <th className="py-3 pr-4 w-[20%]">Plan</th>
+                <th className="py-3 pr-4 w-[20%]">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((c, i) => {
+                const canSelect = selectableNames.includes(c.name);
+                const hasEmail = !!emailFor(c.name, c.email);
+                const campaign = campaigns?.find((camp) => camp.notes === winbackTag(c.name));
+                return (
+                  <tr
+                    key={`${c.name}-${i}`}
+                    className={`border-b border-neutral-50 last:border-0 align-top ${
+                      campaign?.status === "Draft" ? "bg-amber-50/60" : ""
+                    }`}
+                  >
+                    <td className="py-3 pr-2">
+                      {canSelect && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(c.name)}
+                          onChange={() => toggleSelected(c.name)}
+                          className="rounded border-neutral-300"
+                        />
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Avatar name={c.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block text-neutral-900 font-semibold truncate">{c.name || "—"}</span>
+                          <span className="block text-xs text-neutral-400 truncate">{emailFor(c.name, c.email) || "—"}</span>
+                        </span>
                       </span>
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span
-                      className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
-                        c.quitCategory
-                      )}`}
-                    >
-                      {c.quitCategory || c.reason || "Not Assigned"}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 text-neutral-700 truncate">{c.membership || "—"}</td>
-                  <td className="py-3 pr-4">
-                    {hasEmail ? (
-                      <WinbackDraftCell
-                        name={c.name}
-                        campaign={campaign}
-                        brief={brief}
-                        onGenerated={loadCampaigns}
-                        onOpen={() => setOpenDraftFor(c.name)}
-                      />
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        No email
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(
+                          c.quitCategory
+                        )}`}
+                      >
+                        {c.quitCategory || c.reason || "Not Assigned"}
                       </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="py-3 pr-4 text-neutral-700 truncate">{c.membership || "—"}</td>
+                    <td className="py-3 pr-4">
+                      {hasEmail ? (
+                        <WinbackDraftCell
+                          name={c.name}
+                          campaign={campaign}
+                          brief={brief}
+                          onGenerated={loadCampaigns}
+                          onOpen={() => setOpenDraftFor(c.name)}
+                        />
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                          No email
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
           <p className="text-sm text-neutral-500">
             Showing {pageItems.length} of {filtered.length} cancellations
@@ -2365,72 +2371,74 @@ function PastDueList({ rows, meta }: { rows: SheetRow[]; meta: SheetMeta }) {
               />
             </div>
           )}
-          <table className="w-full text-sm table-fixed">
-            <thead>
-              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-                <th className="py-3 pr-2 w-6"></th>
-                <th className="py-3 pr-4 w-[30%]">Member</th>
-                <th className="py-3 pr-4 w-[16%]">Overdue</th>
-                <th className="py-3 pr-4 w-[18%]">Last Attempt</th>
-                <th className="py-3 pr-4 w-[16%]">Status</th>
-                <th className="py-3 pr-4 w-[20%]">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((m) => (
-                <tr
-                  key={m.row}
-                  className={`border-b border-neutral-50 last:border-0 align-top ${
-                    m.emailBody && (!m.emailStatus || m.emailStatus === "Draft") ? "bg-amber-50/60" : ""
-                  }`}
-                >
-                  <td className="py-3 pr-2">
-                    {selectableRows.includes(m.row) && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(m.row)}
-                        onChange={() => toggleSelected(m.row)}
-                        className="rounded border-neutral-300"
-                      />
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <Avatar name={m.name} size="sm" />
-                      <span className="min-w-0">
-                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "Unnamed member"}</span>
-                        <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 text-neutral-700 truncate">
-                    {formatMoneyCell(m.totalOverdue)}
-                  </td>
-                  <td className="py-3 pr-4 text-neutral-500 truncate">{m.lastAttempt || "—"}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.emailStatus)}`}>
-                      {m.emailStatus || "Not Assigned"}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {emailFor(m.name, m.email) ? (
-                      <PastDueDraftCell
-                        member={m}
-                        hasEmail={!!emailFor(m.name, m.email)}
-                        brief={brief}
-                        onGenerated={(c) => patchMember(m.row, c)}
-                        onOpen={() => setOpenRow(m.row)}
-                      />
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        No email
-                      </span>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                  <th className="py-3 pr-2 w-6"></th>
+                  <th className="py-3 pr-4 w-[30%]">Member</th>
+                  <th className="py-3 pr-4 w-[16%]">Overdue</th>
+                  <th className="py-3 pr-4 w-[18%]">Last Attempt</th>
+                  <th className="py-3 pr-4 w-[16%]">Status</th>
+                  <th className="py-3 pr-4 w-[20%]">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pageItems.map((m) => (
+                  <tr
+                    key={m.row}
+                    className={`border-b border-neutral-50 last:border-0 align-top ${
+                      m.emailBody && (!m.emailStatus || m.emailStatus === "Draft") ? "bg-amber-50/60" : ""
+                    }`}
+                  >
+                    <td className="py-3 pr-2">
+                      {selectableRows.includes(m.row) && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(m.row)}
+                          onChange={() => toggleSelected(m.row)}
+                          className="rounded border-neutral-300"
+                        />
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Avatar name={m.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block text-neutral-900 font-semibold truncate">{m.name || "Unnamed member"}</span>
+                          <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-neutral-700 truncate">
+                      {formatMoneyCell(m.totalOverdue)}
+                    </td>
+                    <td className="py-3 pr-4 text-neutral-500 truncate">{m.lastAttempt || "—"}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(m.emailStatus)}`}>
+                        {m.emailStatus || "Not Assigned"}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {emailFor(m.name, m.email) ? (
+                        <PastDueDraftCell
+                          member={m}
+                          hasEmail={!!emailFor(m.name, m.email)}
+                          brief={brief}
+                          onGenerated={(c) => patchMember(m.row, c)}
+                          onOpen={() => setOpenRow(m.row)}
+                        />
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                          No email
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
             <p className="text-sm text-neutral-500">
               Showing {pageItems.length} of {filtered.length} members
@@ -4468,94 +4476,96 @@ function TrialTable({
             </div>
           </div>
         </div>
-        <table className="w-full text-sm table-fixed">
-          <thead>
-            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-              <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4 w-[28%]">Name</th>
-              <th className="py-3 pr-4 w-[28%]">Membership Program</th>
-              <th className="py-3 pr-4 w-[16%]">Ends In</th>
-              <th className="py-3 pr-4 w-[22%]">Draft Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((m, i) => {
-              const canSelect = selectableNames.includes(m.name);
-              const campaign = campaigns?.find((c) => c.notes === trialTag(m.name));
-              const draftStatus = campaign?.status;
-              const hasEmail = !!emailFor(m.name, m.email);
-              const { title, subtitle } = splitMembershipLabel(m.membership);
-              const daysLeft = daysUntil(m.expires);
-              return (
-                <tr
-                  key={`${m.name}-${i}`}
-                  className={`border-b border-neutral-50 last:border-0 align-top ${draftStatus === "Draft" ? "bg-amber-50/60" : ""}`}
-                >
-                  <td className="py-3 pr-2">
-                    {canSelect && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(m.name)}
-                        onChange={() => toggleSelected(m.name)}
-                        className="rounded border-neutral-300"
-                      />
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <Avatar name={m.name} size="sm" />
-                      <span className="min-w-0">
-                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
-                        <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                <th className="py-3 pr-2 w-6"></th>
+                <th className="py-3 pr-4 w-[28%]">Name</th>
+                <th className="py-3 pr-4 w-[28%]">Membership Program</th>
+                <th className="py-3 pr-4 w-[16%]">Ends In</th>
+                <th className="py-3 pr-4 w-[22%]">Draft Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((m, i) => {
+                const canSelect = selectableNames.includes(m.name);
+                const campaign = campaigns?.find((c) => c.notes === trialTag(m.name));
+                const draftStatus = campaign?.status;
+                const hasEmail = !!emailFor(m.name, m.email);
+                const { title, subtitle } = splitMembershipLabel(m.membership);
+                const daysLeft = daysUntil(m.expires);
+                return (
+                  <tr
+                    key={`${m.name}-${i}`}
+                    className={`border-b border-neutral-50 last:border-0 align-top ${draftStatus === "Draft" ? "bg-amber-50/60" : ""}`}
+                  >
+                    <td className="py-3 pr-2">
+                      {canSelect && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(m.name)}
+                          onChange={() => toggleSelected(m.name)}
+                          className="rounded border-neutral-300"
+                        />
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Avatar name={m.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
+                          <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+                        </span>
                       </span>
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 min-w-0">
-                    <span className="block text-neutral-900 truncate">{title}</span>
-                    <span className="block text-xs text-neutral-400 truncate">{subtitle}</span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {trialTiming(m.expires, now) === "expired" ? (
-                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500">
-                        Expired
-                      </span>
-                    ) : trialTiming(m.expires, now) === "expiring" ? (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        Within 48h
-                      </span>
-                    ) : trialTiming(m.expires, now) === "undated" ? (
-                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
-                        Open ended
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
-                        {daysLeft} days
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    {trialTiming(m.expires, now) === "expired" ? (
-                      <span className="text-xs text-neutral-400">Expired</span>
-                    ) : hasEmail ? (
-                      <TrialDraftCell
-                        name={m.name}
-                        hasEmail={hasEmail}
-                        campaign={campaign}
-                        brief={brief}
-                        onGenerated={loadCampaigns}
-                        onOpen={() => setOpenDraftFor(m.name)}
-                      />
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        No email
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="py-3 pr-4 min-w-0">
+                      <span className="block text-neutral-900 truncate">{title}</span>
+                      <span className="block text-xs text-neutral-400 truncate">{subtitle}</span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {trialTiming(m.expires, now) === "expired" ? (
+                        <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-500">
+                          Expired
+                        </span>
+                      ) : trialTiming(m.expires, now) === "expiring" ? (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                          Within 48h
+                        </span>
+                      ) : trialTiming(m.expires, now) === "undated" ? (
+                        <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+                          Open ended
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600">
+                          {daysLeft} days
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {trialTiming(m.expires, now) === "expired" ? (
+                        <span className="text-xs text-neutral-400">Expired</span>
+                      ) : hasEmail ? (
+                        <TrialDraftCell
+                          name={m.name}
+                          hasEmail={hasEmail}
+                          campaign={campaign}
+                          brief={brief}
+                          onGenerated={loadCampaigns}
+                          onOpen={() => setOpenDraftFor(m.name)}
+                        />
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                          No email
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
           <p className="text-sm text-neutral-500">
             Showing {pageItems.length} of {sorted.length} trial members
@@ -5153,67 +5163,69 @@ function AttendanceDraftTable({
             </div>
           </div>
         </div>
-        <table className="w-full text-sm table-fixed">
-          <thead>
-            <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-              <th className="py-3 pr-2 w-6"></th>
-              <th className="py-3 pr-4 w-[30%]">Member</th>
-              <th className="py-3 pr-4 w-[26%]">{detailLabel}</th>
-              <th className="py-3 pr-4 w-[20%]">Status</th>
-              <th className="py-3 pr-4 w-[20%]">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((m, i) => {
-              const canSelect = selectableNames.includes(m.name);
-              const campaign = campaigns?.find((c) => c.notes === tagFn(m.name));
-              const isNew = campaign?.status === "Draft";
-              const hasEmail = !!emailFor(m.name, m.email);
-              return (
-                <tr key={`${m.name}-${i}`} className={`border-b border-neutral-50 last:border-0 align-top ${isNew ? "bg-amber-50/60" : ""}`}>
-                  <td className="py-3 pr-2">
-                    {canSelect && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(m.name)}
-                        onChange={() => toggleSelected(m.name)}
-                        className="rounded border-neutral-300"
-                      />
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <Avatar name={m.name} size="sm" />
-                      <span className="min-w-0">
-                        <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
-                        <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm table-fixed">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                <th className="py-3 pr-2 w-6"></th>
+                <th className="py-3 pr-4 w-[30%]">Member</th>
+                <th className="py-3 pr-4 w-[26%]">{detailLabel}</th>
+                <th className="py-3 pr-4 w-[20%]">Status</th>
+                <th className="py-3 pr-4 w-[20%]">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((m, i) => {
+                const canSelect = selectableNames.includes(m.name);
+                const campaign = campaigns?.find((c) => c.notes === tagFn(m.name));
+                const isNew = campaign?.status === "Draft";
+                const hasEmail = !!emailFor(m.name, m.email);
+                return (
+                  <tr key={`${m.name}-${i}`} className={`border-b border-neutral-50 last:border-0 align-top ${isNew ? "bg-amber-50/60" : ""}`}>
+                    <td className="py-3 pr-2">
+                      {canSelect && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(m.name)}
+                          onChange={() => toggleSelected(m.name)}
+                          className="rounded border-neutral-300"
+                        />
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Avatar name={m.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block text-neutral-900 font-semibold truncate">{m.name || "—"}</span>
+                          <span className="block text-xs text-neutral-400 truncate">{emailFor(m.name, m.email) || "—"}</span>
+                        </span>
                       </span>
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 text-neutral-700 truncate">{m.detail}</td>
-                  <td className="py-3 pr-4">
-                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(campaign?.status || "No draft")}`}>
-                      {campaign?.status || "No draft"}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    {!hasEmail ? (
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                        No email
+                    </td>
+                    <td className="py-3 pr-4 text-neutral-700 truncate">{m.detail}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(campaign?.status || "No draft")}`}>
+                        {campaign?.status || "No draft"}
                       </span>
-                    ) : !campaign ? (
-                      <GenerateDraftButton name={m.name} generateDraft={generateDraft} onGenerated={loadCampaigns} />
-                    ) : (
-                      <button onClick={() => setOpenDraftFor(m.name)} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
-                        {isNew ? "View Draft" : campaign.status}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="py-3 pr-4">
+                      {!hasEmail ? (
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                          No email
+                        </span>
+                      ) : !campaign ? (
+                        <GenerateDraftButton name={m.name} generateDraft={generateDraft} onGenerated={loadCampaigns} />
+                      ) : (
+                        <button onClick={() => setOpenDraftFor(m.name)} className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+                          {isNew ? "View Draft" : campaign.status}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
           <p className="text-sm text-neutral-500">
             Showing {sorted.length} of {members.length} {pageLabel}

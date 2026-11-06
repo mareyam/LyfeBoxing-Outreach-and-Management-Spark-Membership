@@ -433,102 +433,104 @@ export function LeadsView() {
               </button>
             </div>
           )}
-          <table className="w-full text-sm table-fixed">
-            <thead>
-              <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
-                <th className="py-3 pr-2 w-6"></th>
-                <th className="py-3 pr-4 w-[32%]">Lead</th>
-                <th className="py-3 pr-4 w-[20%]">Stage</th>
-                <th className="py-3 pr-4 w-[20%]">Email Status</th>
-                <th className="py-3 pr-4 w-[28%]">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((lead) => {
-                const isNew = lead.emailStatus === "Draft";
-                return (
-                  <tr
-                    key={lead.row}
-                    onClick={() => setOpenRow(lead.row)}
-                    className={`border-b border-neutral-50 last:border-0 align-top cursor-pointer hover:bg-neutral-50 ${isNew ? "bg-amber-50/60" : ""}`}
-                  >
-                    <td className="py-3 pr-2" onClick={(e) => e.stopPropagation()}>
-                      {canSend(lead) && (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(lead.row)}
-                          onChange={() =>
-                            setSelected((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(lead.row)) next.delete(lead.row);
-                              else next.add(lead.row);
-                              return next;
-                            })
-                          }
-                          className="rounded border-neutral-300"
-                        />
-                      )}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className="flex items-center gap-2.5 min-w-0">
-                        <Avatar name={lead.fullName} size="sm" />
-                        <span className="min-w-0">
-                          <span className="block text-neutral-900 font-semibold truncate">{lead.fullName || "—"}</span>
-                          <span className="block text-xs text-neutral-400 truncate">{lead.email || "—"}</span>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="text-left text-xs font-semibold text-neutral-400 uppercase tracking-wide border-b border-neutral-100 bg-neutral-50/60">
+                  <th className="py-3 pr-2 w-6"></th>
+                  <th className="py-3 pr-4 w-[32%]">Lead</th>
+                  <th className="py-3 pr-4 w-[20%]">Stage</th>
+                  <th className="py-3 pr-4 w-[20%]">Email Status</th>
+                  <th className="py-3 pr-4 w-[28%]">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((lead) => {
+                  const isNew = lead.emailStatus === "Draft";
+                  return (
+                    <tr
+                      key={lead.row}
+                      onClick={() => setOpenRow(lead.row)}
+                      className={`border-b border-neutral-50 last:border-0 align-top cursor-pointer hover:bg-neutral-50 ${isNew ? "bg-amber-50/60" : ""}`}
+                    >
+                      <td className="py-3 pr-2" onClick={(e) => e.stopPropagation()}>
+                        {canSend(lead) && (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(lead.row)}
+                            onChange={() =>
+                              setSelected((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(lead.row)) next.delete(lead.row);
+                                else next.add(lead.row);
+                                return next;
+                              })
+                            }
+                            className="rounded border-neutral-300"
+                          />
+                        )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          <Avatar name={lead.fullName} size="sm" />
+                          <span className="min-w-0">
+                            <span className="block text-neutral-900 font-semibold truncate">{lead.fullName || "—"}</span>
+                            <span className="block text-xs text-neutral-400 truncate">{lead.email || "—"}</span>
+                          </span>
                         </span>
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      {lead.stage ? (
-                        <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(lead.stage)}`}>
-                          {lead.stage}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {lead.emailStatus ? (
-                        <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(lead.emailStatus)}`}>
-                          {lead.emailStatus}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-3 pr-4" onClick={(e) => e.stopPropagation()}>
-                      {!lead.email ? (
-                        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                          No email
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-3">
-                          {!["Queued", "Sent", "Sending"].includes(lead.emailStatus) && (
-                            <button
-                              onClick={() => generate([lead.row])}
-                              disabled={generating === lead.row}
-                              className="text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
-                            >
-                              {generating === lead.row ? "Drafting…" : "Generate Draft"}
-                            </button>
-                          )}
-                          {canSend(lead) && lead.emailStatus !== "Queued" && (
-                            <button
-                              onClick={() => send(lead).catch((err) => setActionError(err instanceof Error ? err.message : "Couldn't queue this lead."))}
-                              disabled={sending === lead.row}
-                              className="text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
-                            >
-                              {sending === lead.row ? "Sending…" : "Send"}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="py-3 pr-4">
+                        {lead.stage ? (
+                          <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(lead.stage)}`}>
+                            {lead.stage}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        {lead.emailStatus ? (
+                          <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium ${categoryColor(lead.emailStatus)}`}>
+                            {lead.emailStatus}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-3 pr-4" onClick={(e) => e.stopPropagation()}>
+                        {!lead.email ? (
+                          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                            No email
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            {!["Queued", "Sent", "Sending"].includes(lead.emailStatus) && (
+                              <button
+                                onClick={() => generate([lead.row])}
+                                disabled={generating === lead.row}
+                                className="text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
+                              >
+                                {generating === lead.row ? "Drafting…" : "Generate Draft"}
+                              </button>
+                            )}
+                            {canSend(lead) && lead.emailStatus !== "Queued" && (
+                              <button
+                                onClick={() => send(lead).catch((err) => setActionError(err instanceof Error ? err.message : "Couldn't queue this lead."))}
+                                disabled={sending === lead.row}
+                                className="text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
+                              >
+                                {sending === lead.row ? "Sending…" : "Send"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <div className="flex items-center justify-between pt-4 mt-1 border-t border-neutral-100">
             <p className="text-sm text-neutral-500">
               Showing {pageItems.length} of {filtered.length} leads
